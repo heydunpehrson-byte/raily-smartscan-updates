@@ -1,7 +1,7 @@
 {
-  "version": "71.2",
+  "version": "72.0",
   "channel": "stable",
-  "url": "https://raw.githubusercontent.com/heydunpehrson-byte/raily-smartscan-updates/main/releases/RAILY_SmartScan_v71_2.py",
-  "sha256": "5aa17772359e450a2e050611b7f75938ab713ebe8fa77aa2d4387c026b3861c6",
-  "notes": "RAILY v71.2 Dispatch visibility update: shows the exact Incoming folder RAILY is watching, adds an Open Incoming button, compacts the Dispatch Center on smaller screens so Switch List and Live Activity remain visible, and scales document previews to the available window instead of pushing controls off-screen."
+  "url": "https://raw.githubusercontent.com/heydunpehrson-byte/raily-smartscan-updates/main/releases/RAILY_SmartScan_v72_0.py",
+  "sha256": "ac7b4e08c0a372208ca7e78604f7507db0b6e14f5e4261bba3dcf776da9583fc",
+  "notes": "RAILY v72.0 connects the existing safe updater to the official stable GitHub update channel by default. Blank manifest URLs are populated automatically; custom URLs, existing features and user data are preserved. SHA-256 validation, pre-update backups, rollback and startup health checking remain unchanged."
 }
