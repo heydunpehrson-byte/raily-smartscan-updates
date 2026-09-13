@@ -1,0 +1,10 @@
+.venv-brain/
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.db-wal
+*.db-shm
+.env
+*.log
+DESKTOP_CODEX_HANDOFF.md
