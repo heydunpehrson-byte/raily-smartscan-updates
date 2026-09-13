@@ -1,0 +1,7 @@
+{
+  "version": "71.1",
+  "channel": "stable",
+  "url": "https://raw.githubusercontent.com/heydunpehrson-byte/raily-smartscan-updates/main/releases/RAILY_SmartScan_v71_1.py",
+  "sha256": "3f7137e4b4e415a45ba1610c5ce630a21eae04ec4c5aaccf5ec1d815b63a0dc2",
+  "notes": "RAILY SmartScan stable channel. Current clean-foundation release with RAILY Dispatch Center, Railroad to Location filing, whole-page learning support, document-date priority, duplicate protection, and safe update rollback."
+}
