@@ -1,7 +1,7 @@
 {
-  "version": "71.1",
+  "version": "71.2",
   "channel": "stable",
-  "url": "https://raw.githubusercontent.com/heydunpehrson-byte/raily-smartscan-updates/main/releases/RAILY_SmartScan_v71_1.py",
-  "sha256": "3f7137e4b4e415a45ba1610c5ce630a21eae04ec4c5aaccf5ec1d815b63a0dc2",
-  "notes": "RAILY SmartScan stable channel. Current clean-foundation release with RAILY Dispatch Center, Railroad to Location filing, whole-page learning support, document-date priority, duplicate protection, and safe update rollback."
+  "url": "https://raw.githubusercontent.com/heydunpehrson-byte/raily-smartscan-updates/main/releases/RAILY_SmartScan_v71_2.py",
+  "sha256": "5aa17772359e450a2e050611b7f75938ab713ebe8fa77aa2d4387c026b3861c6",
+  "notes": "RAILY v71.2 Dispatch visibility update: shows the exact Incoming folder RAILY is watching, adds an Open Incoming button, compacts the Dispatch Center on smaller screens so Switch List and Live Activity remain visible, and scales document previews to the available window instead of pushing controls off-screen."
 }
