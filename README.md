@@ -2,6 +2,31 @@
 
 Current stable release: **RAILY v72.1 — Fast Date Reader + Teach UI Fix** for Windows 10/11.
 
+## v72.2 feature branch — Smart OCR + Handwritten Field Intelligence
+
+Available on `feature/v72.2-smart-ocr` in
+[RAILY_SmartScan_v72_2.py](releases/RAILY_SmartScan_v72_2.py). This branch does
+not promote v72.2 to the stable updater; the stable manifest remains v72.1.
+
+- Structured OCR retains word coordinates/confidence, corrects confident page
+  orientation and modest skew, separates ruled tables, and presents detected
+  fields, printed text, table content and uncertain fragments separately.
+- Spatial printed-label matching reads Name, Start Date and Location beside or
+  below labels. Trusted values feed existing metadata and date selection;
+  existing date priorities remain first and uncertain fields require review.
+- Late handwriting fallbacks reuse crops, enlarge small fields, clean rules,
+  isolate blue ink and repair interrupted strokes. Date logs include calls,
+  elapsed time and successful preprocessing. The three-call printed fast path
+  and 24-call full reader remain bounded; full reads also have a 20-second budget.
+- Page renders and OCR evidence are cached. Teach and duplicate-review OCR
+  preparation runs on workers, with the existing scrolling/layout helpers retained.
+
+Full syntax and isolated regression tests pass. Seven generated form layouts
+recover all three fields. A crossed-line Start Date and below-label Location
+improve over v72.1 raw OCR; all four printed date formats still take two calls.
+These use controlled printed/handwriting-style fixtures, not real scanned
+handwriting. See [test results and limits](docs/v72.2-smart-ocr-validation.md).
+
 - [Download RAILY v72.1](releases/RAILY_SmartScan_v72_1.py)
 - [Official stable update manifest](https://raw.githubusercontent.com/heydunpehrson-byte/raily-smartscan-updates/main/update_manifest.json)
 
