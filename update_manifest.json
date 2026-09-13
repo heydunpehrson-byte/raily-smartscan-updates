@@ -1,7 +1,7 @@
 {
-  "version": "72.0",
+  "version": "72.1",
   "channel": "stable",
-  "url": "https://raw.githubusercontent.com/heydunpehrson-byte/raily-smartscan-updates/main/releases/RAILY_SmartScan_v72_0.py",
-  "sha256": "ac7b4e08c0a372208ca7e78604f7507db0b6e14f5e4261bba3dcf776da9583fc",
-  "notes": "RAILY v72.0 connects the existing safe updater to the official stable GitHub update channel by default. Blank manifest URLs are populated automatically; custom URLs, existing features and user data are preserved. SHA-256 validation, pre-update backups, rollback and startup health checking remain unchanged."
+  "url": "https://raw.githubusercontent.com/heydunpehrson-byte/raily-smartscan-updates/main/releases/RAILY_SmartScan_v72_1.py",
+  "sha256": "ef87215e6d3da716bd7d5601611ebdaaaa1b5142ee2b8d951cdf11a6ff1ca26d",
+  "notes": "RAILY v72.1 — Fast Date Reader + Teach UI Fix. Taught dates use an upright-first, bounded OCR sequence with cached images, immediate exit on validated evidence, and rotation/handwriting fallbacks. Teaching and review windows fit the usable desktop, scroll vertically, and keep action buttons visible. Existing user data, filing, learning, update validation, backups and rollback are preserved."
 }
