@@ -86,6 +86,7 @@ def initialize_database():
             "job_uuid":"TEXT", "original_name":"TEXT", "stored_path":"TEXT",
             "sha256":"TEXT", "size_bytes":"INTEGER", "submitted_by":"TEXT",
             "error_message":"TEXT"
+            ,"raw_ocr_context":"TEXT", "cleaned_ocr_context":"TEXT", "ocr_confidence":"REAL"
         }.items():
             if name not in columns:
                 conn.execute(f"ALTER TABLE processing_jobs ADD COLUMN {name} {definition}")

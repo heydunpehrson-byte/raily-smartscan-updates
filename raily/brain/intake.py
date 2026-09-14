@@ -10,7 +10,6 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from .database import BRAIN_ROOT, connect
-from raily.engine.adapter import process_document
 
 
 router = APIRouter()
@@ -65,6 +64,7 @@ def ensure_intake_schema():
             "error_message": "TEXT",
             "metadata_json": "TEXT",
             "review_reason": "TEXT",
+            "raw_ocr_context": "TEXT", "cleaned_ocr_context": "TEXT", "ocr_confidence": "REAL",
         }
 
         for column, definition in additions.items():
@@ -387,13 +387,11 @@ def build_router(current_user, audit):
             result = []
             for row in rows:
                 item = dict(row)
-                try:
-                    ocr = process_document(row["stored_path"]) if row["stored_path"] else {}
-                except Exception as exc:
-                    ocr = {"error": str(exc)}
-                item["ocr"] = ocr
-                item["raw_ocr_context"] = ocr.get("raw_text", ocr.get("text", ""))
-                item["cleaned_ocr_context"] = ocr.get("cleaned_text", "")
+                # Review must be a fast read of persisted job metadata. OCR is
+                # performed by the worker; never rerun it synchronously here.
+                item["ocr"] = {}
+                item["raw_ocr_context"] = item.get("raw_ocr_context", "")
+                item["cleaned_ocr_context"] = item.get("cleaned_ocr_context", "")
                 item["proposed_filename"] = row["original_name"] or row["document_name"]
                 item["proposed_destination"] = str(BRAIN_ROOT / "Documents" / "Railroads" / (ocr.get("railroad") or "[Railroad required]") / (ocr.get("location") or "[Location required]"))
                 result.append(item)
