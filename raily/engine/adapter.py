@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -10,6 +11,21 @@ try:
 except Exception:  # OCR is optional in minimal server installs
     pytesseract = None
     Image = None
+
+def configure_tesseract():
+    """Select an installed Tesseract explicitly; never rely on PATH."""
+    if not pytesseract:
+        return None
+    configured = os.environ.get("RAILY_TESSERACT_CMD")
+    candidates = [configured, r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                  r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            pytesseract.pytesseract.tesseract_cmd = str(Path(candidate))
+            return str(Path(candidate))
+    return None
+
+TESSERACT_CMD = configure_tesseract()
 
 FIELD_LABELS = {
     "railroad": ("railroad", "railway", "company"),
