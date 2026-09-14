@@ -354,4 +354,23 @@ def build_router(current_user, audit):
         finally:
             conn.close()
 
+    @router.post("/jobs/{job_id}/retry")
+    def retry_job(job_id: int, user=Depends(current_user)):
+        if user["role"] not in {"Administrator", "Conductor / Reviewer"}:
+            raise HTTPException(status_code=403, detail="Conductor or Administrator access required")
+        ensure_intake_schema()
+        conn = connect()
+        try:
+            row = conn.execute("SELECT status, document_name FROM processing_jobs WHERE id=?", (job_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Job not found")
+            if row["status"] not in {"ERROR", "CONDUCTOR REVIEW"}:
+                raise HTTPException(status_code=409, detail="Only failed or review jobs can be retried")
+            conn.execute("UPDATE processing_jobs SET status='QUEUED', error_message=NULL, updated_at=? WHERE id=?", (datetime.now(timezone.utc).isoformat(), job_id))
+            conn.commit()
+        finally:
+            conn.close()
+        audit(user["username"], user["workstation_id"], "JOB_REQUEUED", f"Requeued job {job_id} ({row['document_name']})")
+        return {"job_id": job_id, "status": "QUEUED"}
+
     return router
