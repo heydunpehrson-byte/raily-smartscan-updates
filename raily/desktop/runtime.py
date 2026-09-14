@@ -58,6 +58,28 @@ def health():
         return None
 
 
+def tailscale_status():
+    """Return safe, non-secret local Tailscale status for Diagnostics."""
+    command = Path(os.environ.get('RAILY_TAILSCALE_CMD', r'C:\Program Files\Tailscale\tailscale.exe'))
+    if not command.exists():
+        return {'installed': False, 'status': 'Tailscale is not installed'}
+    try:
+        result = subprocess.run([str(command), 'status', '--json'], capture_output=True,
+                                text=True, timeout=5,
+                                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or '').strip()
+            return {'installed': True, 'status': 'Installed, but local status is unavailable',
+                    'detail': detail[:240]}
+        payload = json.loads(result.stdout)
+        self_node = payload.get('Self') or {}
+        return {'installed': True, 'status': payload.get('BackendState', 'unknown'),
+                'hostname': self_node.get('DNSName') or self_node.get('HostName'),
+                'tailnet_ip': (self_node.get('TailscaleIPs') or [None])[0]}
+    except Exception as exc:
+        return {'installed': True, 'status': 'Unable to query Tailscale', 'detail': str(exc)[:240]}
+
+
 def mark_running(mode):
     STATE.mkdir(parents=True, exist_ok=True)
     (STATE/f'{mode}.stop').unlink(missing_ok=True)

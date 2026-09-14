@@ -6,7 +6,7 @@ import sqlite3
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
-from .runtime import ROOT, LOGS, health, managed_process, safe_restart, configure_logging, SingleInstance
+from .runtime import ROOT, LOGS, health, managed_process, safe_restart, configure_logging, SingleInstance, tailscale_status
 from .ui import enable_dpi, center, apply_icon
 from raily.version import VERSION, CHANNEL
 
@@ -17,6 +17,11 @@ def snapshot():
               'Worker': ('Running' if brain.get('worker_alive') else 'Not reported / needs attention') if brain else 'Unavailable',
               'Workstation connection': 'Running locally' if managed_process('workstation') else 'No managed Workstation detected',
               'Version/build': VERSION+' • '+CHANNEL, 'Log location': str(LOGS)}
+    ts = tailscale_status()
+    if ts.get('hostname'):
+        result['Tailscale'] = f"{ts.get('status')} • {ts['hostname']} • {ts.get('tailnet_ip') or 'no tailnet IP'}"
+    else:
+        result['Tailscale'] = ts.get('status', 'Unavailable') + (f" • {ts['detail']}" if ts.get('detail') else '')
     try:
         from raily.engine.adapter import configure_tesseract
         command = configure_tesseract()
