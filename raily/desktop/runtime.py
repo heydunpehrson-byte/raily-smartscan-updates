@@ -37,7 +37,8 @@ class SingleInstance:
             self.handle = kernel.CreateMutexW(None, False, 'Local\\RAILY.Desktop.'+name)
             if not self.handle:
                 raise OSError('Cannot create RAILY instance lock')
-            self.acquired = ctypes.get_last_error() != 183
+            kernel.GetLastError.restype = ctypes.c_ulong
+            self.acquired = kernel.GetLastError() != 183
 
     def close(self):
         if self.handle:
