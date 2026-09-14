@@ -4,10 +4,13 @@ import re
 import sqlite3
 import uuid
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response
+from .preview import render_page
 
 from .database import BRAIN_ROOT, connect
 
@@ -377,6 +380,28 @@ def build_router(current_user, audit):
         audit(user["username"], user["workstation_id"], "JOB_REQUEUED", f"Requeued job {job_id} ({row['document_name']})")
         return {"job_id": job_id, "status": "QUEUED"}
 
+    @router.get("/review/{job_id}/preview")
+    def document_preview(job_id: int, page: int = 0, user=Depends(current_user)):
+        if user['role'] not in {'Administrator', 'Conductor / Reviewer'}:
+            raise HTTPException(403, 'Conductor or Administrator access required')
+        conn = connect()
+        try:
+            row = conn.execute("SELECT stored_path FROM processing_jobs WHERE id=? AND status='CONDUCTOR REVIEW'", (job_id,)).fetchone()
+        finally:
+            conn.close()
+        if not row or not row['stored_path']:
+            raise HTTPException(404, 'Review document not available')
+        path = Path(row['stored_path']).resolve()
+        if not path.is_relative_to(BRAIN_ROOT.resolve()):
+            raise HTTPException(403, 'Document is outside Brain storage')
+        try:
+            data, count = render_page(path, page)
+        except IndexError:
+            raise HTTPException(404, 'Page not found')
+        except Exception:
+            raise HTTPException(422, 'Document preview could not be rendered')
+        return Response(data, media_type='image/png', headers={'X-Page-Count': str(count), 'Cache-Control': 'no-store'})
+
     @router.get("/review")
     def review_queue(user=Depends(current_user)):
         if user["role"] not in {"Administrator", "Conductor / Reviewer"}:
@@ -410,18 +435,44 @@ def build_router(current_user, audit):
             raise HTTPException(status_code=403, detail="Conductor or Administrator access required")
         ensure_intake_schema(); conn = connect()
         try:
+            conn.execute('BEGIN IMMEDIATE')
             row = conn.execute("SELECT * FROM processing_jobs WHERE id=? AND status='CONDUCTOR REVIEW'", (job_id,)).fetchone()
             if not row: raise HTTPException(status_code=404, detail="Review job not found")
             metadata = {k: str(body.get(k, "")).strip() for k in ("railroad", "location", "document_type", "date", "name")}
             if not metadata["document_type"]:
                 raise HTTPException(status_code=400, detail="Document Type/Category is required")
-            if any(part in metadata["document_type"] for part in ("..", "\\", "/")):
-                raise HTTPException(status_code=400, detail="Unsafe document type")
-            conn.execute("UPDATE processing_jobs SET status='FILED', metadata_json=?, review_reason=NULL, error_message=NULL, updated_at=? WHERE id=?", (json.dumps(metadata), datetime.now(timezone.utc).isoformat(), job_id)); conn.commit()
+            # Category is display metadata, not a path component. A slash in
+            # "Work Log / Start Count Log" is valid and retained verbatim.
+            for key in ('railroad', 'location'):
+                value = metadata[key]
+                if value and (value in {'.', '..'} or re.search(r'[<>:"/\\\\|?*\x00-\x1f]', value) or value.endswith((' ', '.'))):
+                    raise HTTPException(400, f'Unsafe {key}')
+            source = Path(row['stored_path'] or '').resolve()
+            if not source.is_relative_to(BRAIN_ROOT.resolve()) or not source.is_file():
+                raise HTTPException(409, 'Stored document unavailable')
+            digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            if not row['sha256'] or digest != row['sha256']:
+                raise HTTPException(409, 'Source SHA-256 verification failed')
+            destination = (BRAIN_ROOT / 'Documents' / 'Railroads' / (metadata['railroad'] or 'Unassigned Railroad') / (metadata['location'] or 'General')).resolve()
+            if not destination.is_relative_to((BRAIN_ROOT / 'Documents' / 'Railroads').resolve()):
+                raise HTTPException(400, 'Unsafe filing destination')
+            destination.mkdir(parents=True, exist_ok=True)
+            target = destination / f"{job_id}__{safe_filename(row['original_name'] or row['document_name'])}"
+            try:
+                with target.open('xb') as output, source.open('rb') as input_file:
+                    shutil.copyfileobj(input_file, output)
+            except FileExistsError:
+                raise HTTPException(409, 'Destination already exists; review required')
+            if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                raise HTTPException(409, 'Destination verification failed; source preserved')
+            conn.execute("UPDATE processing_jobs SET status='FILED', stored_path=?, metadata_json=?, review_reason=NULL, error_message=NULL, updated_at=? WHERE id=?", (str(target), json.dumps(metadata), datetime.now(timezone.utc).isoformat(), job_id))
             if body.get("teach"):
                 conn.execute("INSERT INTO learned_rules(rule_type, pattern, correction_json, created_by) VALUES(?,?,?,?)", (body.get("rule_type", "document"), body.get("pattern", ""), json.dumps(metadata), user["username"])); conn.commit()
+            conn.execute('INSERT INTO audit_events(username, workstation, action, details) VALUES(?,?,?,?)', (user['username'], user['workstation_id'], 'JOB_REVIEW_APPROVED', json.dumps({'job_id': job_id, 'metadata': metadata, 'destination': str(target)})))
+            conn.commit()
+            # Source is retained as an intake copy; the verified final file is
+            # now authoritative. No overwrite or silent deletion is performed.
         finally: conn.close()
-        audit(user["username"], user["workstation_id"], "JOB_REVIEW_APPROVED", f"Approved job {job_id} with corrected metadata")
         return {"job_id": job_id, "status": "FILED", "metadata": metadata}
 
     @router.get("/admin/learned-rules")

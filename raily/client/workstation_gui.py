@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import httpx
+from .preview import PreviewPane
 
 
 BRAIN_URL = "http://127.0.0.1:8765"
@@ -604,7 +605,16 @@ class RailyWorkstation(tk.Tk):
                 messagebox.showinfo("Conductor Review", "No jobs are awaiting review.", parent=self); return
             job = jobs[0]
             ocr = job.get("ocr") or {}
-            window = tk.Toplevel(self); window.title(f"Conductor Review — Job {job['id']}"); window.geometry("760x620"); window.transient(self)
+            review_window = tk.Toplevel(self)
+            review_window.title(f"Conductor Review — Job {job['id']}")
+            review_window.geometry(f"{min(1400, self.winfo_screenwidth()-80)}x{min(900, self.winfo_screenheight()-100)}")
+            review_window.transient(self)
+            panes = ttk.Panedwindow(review_window, orient='horizontal')
+            panes.pack(fill='both', expand=True)
+            preview = PreviewPane(panes, f"{BRAIN_URL}/review/{job['id']}/preview", self.auth_headers())
+            panes.add(preview, weight=3)
+            window = ttk.Frame(panes)
+            panes.add(window, weight=2)
             ttk.Label(window, text=f"File: {job.get('original_name') or job.get('document_name')}\nReview reason: {job.get('review_reason') or job.get('error_message') or 'Low confidence / missing metadata'}", justify="left").pack(anchor="w", padx=12, pady=8)
             ttk.Label(window, text=f"Raw OCR context:\n{(job.get('raw_ocr_context') or ocr.get('text') or '')[:900]}\n\nCleaned/extracted context:\n{(job.get('cleaned_ocr_context') or '')[:900]}\nOCR confidence: {ocr.get('ocr_confidence', 'unknown')}", justify="left", wraplength=720).pack(anchor="w", padx=12)
             form = ttk.Frame(window); form.pack(fill="x", padx=12, pady=8)
@@ -619,7 +629,7 @@ class RailyWorkstation(tk.Tk):
             ttk.Label(window, text="Correction scope:").pack(anchor="w", padx=12)
             ttk.Radiobutton(window, text="Apply to this document only", variable=teach, value="document").pack(anchor="w", padx=20)
             ttk.Radiobutton(window, text="Teach RAILY / Save as learned rule", variable=teach, value="learn").pack(anchor="w", padx=20)
-            ttk.Button(window, text="Close", command=window.destroy).pack(side="right", pady=10)
+            ttk.Button(window, text="Close", command=review_window.destroy).pack(side="right", pady=10)
             def validate(*_):
                 missing = ["document_type"] if not entries["document_type"][0].get().strip() else []
                 for key, (_, entry) in entries.items(): entry.configure(style="Missing.TEntry" if key in missing else "TEntry")
