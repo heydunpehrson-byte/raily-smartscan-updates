@@ -424,6 +424,9 @@ class RailyWorkstation(tk.Tk):
                 style="CardValue.TLabel",
             ).pack(pady=(4, 0))
 
+            if key == "review" and self.role in {"Administrator", "Conductor / Reviewer"}:
+                card.bind("<Button-1>", lambda _e: self.show_review_queue())
+
         middle = ttk.Frame(content, style="Dark.TFrame")
         middle.pack(fill="both", expand=True)
 
@@ -578,6 +581,27 @@ class RailyWorkstation(tk.Tk):
             self.refresh_dashboard()
         except Exception as exc:
             messagebox.showerror("RAILY", f"Retry failed.\n\n{exc}", parent=self)
+
+    def show_review_queue(self):
+        try:
+            response = httpx.get(f"{BRAIN_URL}/review", headers=self.auth_headers(), timeout=5.0)
+            response.raise_for_status(); jobs = response.json()
+            if not jobs:
+                messagebox.showinfo("Conductor Review", "No jobs are awaiting review.", parent=self); return
+            job = jobs[0]
+            detail = "\n".join(f"{k}: {job.get(k, '')}" for k in ("id", "original_name", "status", "error_message", "review_reason", "metadata_json"))
+            if messagebox.askyesno("Conductor Review", detail + "\n\nApprove and file this job?", parent=self):
+                payload = {"railroad": simpledialog.askstring("Railroad", "Railroad:", parent=self) or "",
+                           "location": simpledialog.askstring("Location", "Location:", parent=self) or "",
+                           "document_type": simpledialog.askstring("Document type", "Document type:", parent=self) or "",
+                           "date": simpledialog.askstring("Document date", "Document date:", parent=self) or "",
+                           "name": simpledialog.askstring("Name", "Name:", parent=self) or ""}
+                if not payload["railroad"] or not payload["location"]:
+                    return
+                result = httpx.post(f"{BRAIN_URL}/review/{job['id']}", headers=self.auth_headers(), json=payload, timeout=5.0)
+                result.raise_for_status(); messagebox.showinfo("Conductor Review", "Job approved and filed.", parent=self); self.refresh_dashboard()
+        except Exception as exc:
+            messagebox.showerror("Conductor Review", str(exc), parent=self)
 
     def refresh_dashboard(self):
         if not self.session_token:

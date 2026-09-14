@@ -3,6 +3,7 @@ import os
 import re
 import sqlite3
 import uuid
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -61,6 +62,8 @@ def ensure_intake_schema():
             "size_bytes": "INTEGER",
             "submitted_by": "TEXT",
             "error_message": "TEXT",
+            "metadata_json": "TEXT",
+            "review_reason": "TEXT",
         }
 
         for column, definition in additions.items():
@@ -372,5 +375,30 @@ def build_router(current_user, audit):
             conn.close()
         audit(user["username"], user["workstation_id"], "JOB_REQUEUED", f"Requeued job {job_id} ({row['document_name']})")
         return {"job_id": job_id, "status": "QUEUED"}
+
+    @router.get("/review")
+    def review_queue(user=Depends(current_user)):
+        if user["role"] not in {"Administrator", "Conductor / Reviewer"}:
+            raise HTTPException(status_code=403, detail="Conductor or Administrator access required")
+        ensure_intake_schema(); conn = connect()
+        try:
+            rows = conn.execute("SELECT * FROM processing_jobs WHERE status='CONDUCTOR REVIEW' ORDER BY updated_at DESC").fetchall()
+            return [dict(row) for row in rows]
+        finally: conn.close()
+
+    @router.post("/review/{job_id}")
+    def complete_review(job_id: int, body: dict, user=Depends(current_user)):
+        if user["role"] not in {"Administrator", "Conductor / Reviewer"}:
+            raise HTTPException(status_code=403, detail="Conductor or Administrator access required")
+        ensure_intake_schema(); conn = connect()
+        try:
+            row = conn.execute("SELECT * FROM processing_jobs WHERE id=? AND status='CONDUCTOR REVIEW'", (job_id,)).fetchone()
+            if not row: raise HTTPException(status_code=404, detail="Review job not found")
+            metadata = {k: str(body.get(k, "")).strip() for k in ("railroad", "location", "document_type", "date", "name")}
+            if not metadata["railroad"] or not metadata["location"]: raise HTTPException(status_code=400, detail="Railroad and Location are required")
+            conn.execute("UPDATE processing_jobs SET status='FILED', metadata_json=?, review_reason=NULL, error_message=NULL, updated_at=? WHERE id=?", (json.dumps(metadata), datetime.now(timezone.utc).isoformat(), job_id)); conn.commit()
+        finally: conn.close()
+        audit(user["username"], user["workstation_id"], "JOB_REVIEW_APPROVED", f"Approved job {job_id} with corrected metadata")
+        return {"job_id": job_id, "status": "FILED", "metadata": metadata}
 
     return router
