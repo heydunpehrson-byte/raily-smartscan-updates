@@ -5,7 +5,7 @@ import threading
 import uuid
 from pathlib import Path
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import httpx
 
@@ -537,6 +537,13 @@ class RailyWorkstation(tk.Tk):
                 command=self.show_users,
             ).pack(side="right", padx=(8, 0))
 
+        if self.role in {"Administrator", "Conductor / Reviewer"}:
+            ttk.Button(
+                footer,
+                text="Retry Job",
+                command=self.retry_job,
+            ).pack(side="right", padx=(8, 0))
+
         ttk.Button(
             footer,
             text="Sign Out",
@@ -557,6 +564,20 @@ class RailyWorkstation(tk.Tk):
             self.refresh_dashboard()
         except Exception as exc:
             messagebox.showerror("RAILY", f"Upload failed.\n\n{exc}")
+
+    def retry_job(self):
+        job_id = simpledialog.askinteger("RAILY Retry", "Existing Job ID to retry:", parent=self, minvalue=1)
+        if job_id is None or not self.session_token:
+            return
+        if not messagebox.askyesno("Confirm retry", f"Requeue existing Job {job_id} for processing?", parent=self):
+            return
+        try:
+            response = httpx.post(f"{BRAIN_URL}/jobs/{job_id}/retry", headers=self.auth_headers(), timeout=5.0)
+            response.raise_for_status()
+            messagebox.showinfo("RAILY", f"Job {job_id} is queued for retry.", parent=self)
+            self.refresh_dashboard()
+        except Exception as exc:
+            messagebox.showerror("RAILY", f"Retry failed.\n\n{exc}", parent=self)
 
     def refresh_dashboard(self):
         if not self.session_token:
