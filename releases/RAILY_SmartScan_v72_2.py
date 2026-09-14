@@ -1785,6 +1785,13 @@ def _ocr_labeled_fields(image, words, table_box, deadline):
             lower = min(lower, table_box[1])
         regions = [(box[2]+4, max(0, box[1]-int(h*.65)), right-4, min(lower, box[3]+int(h*.65))),
                    (box[0], box[3]+3, right-4, min(lower-3, box[3]+h*3))]
+        # In forms with labels above values in adjacent columns, preserve the
+        # full column width.  The prior region began at the label's right edge
+        # and could clip the first handwritten character (notably Location).
+        below_column = (max(0, box[0]-8), box[3]+3, min(image.width-4, right+4),
+                        min(image.height, box[3]+h*3 if lower >= image.height else lower-3))
+        if below_column not in regions:
+            regions.append(below_column)
         best = {"value": "", "confidence": 0, "trusted": False, "label_box": box, "method": "unread"}
         votes = {}
         field_calls = 0
@@ -1803,11 +1810,13 @@ def _ocr_labeled_fields(image, words, table_box, deadline):
             ink = ImageOps.invert(_remove_horizontal_lines(ImageOps.grayscale(crop))).point(lambda v: 255 if v > 90 else 0)
             if not ink.getbbox():
                 continue
-            # At most four calls for one field, ten for this page, and a deadline.
-            configs = ("--psm 7", "--psm 13")
+            # At most six calls for one field, twelve for this page, and a deadline.
+            # PSM 6 is useful when a value sits below a label in a neighboring
+            # column and the sparse modes return an empty crop.
+            configs = ("--psm 7", "--psm 13", "--psm 6")
             for method, prepared in _handwriting_images(crop):
                 remaining = deadline-time.monotonic()
-                if calls >= 10 or field_calls >= 4 or remaining <= .05:
+                if calls >= 12 or field_calls >= 6 or remaining <= .05:
                     break
                 config = configs[field_calls % 2]
                 if label == "Start Date":
@@ -1830,6 +1839,34 @@ def _ocr_labeled_fields(image, words, table_box, deadline):
                             "trusted": trusted, "label_box": box, "value_box": region, "method": method}
                 if trusted:
                     break
+            if not best["trusted"] and label != "Start Date" and calls < 12 and time.monotonic() < deadline:
+                try:
+                    calls += 1
+                    raw = pytesseract.image_to_string(crop, config="--psm 6", timeout=min(2.5, deadline-time.monotonic()))
+                    candidate = _field_valid(label, raw)
+                    if candidate:
+                        best = {"value": candidate, "confidence": 85, "trusted": True,
+                                "label_box": box, "value_box": region, "method": "block-layout"}
+                        break
+                except Exception:
+                    pass
+            if not best["trusted"] and label == "Location" and calls < 12 and time.monotonic() < deadline:
+                try:
+                    calls += 1
+                    page_text = pytesseract.image_to_string(image, config="--psm 6", timeout=min(2.5, deadline-time.monotonic()))
+                    match = re.search(r"location\s*:?\s*\n\s*([^\n]+)", page_text, re.I)
+                    raw_candidate = match.group(1) if match else ""
+                    if label == "Location":
+                        date_match = re.search(r"\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", raw_candidate)
+                        if date_match:
+                            raw_candidate = raw_candidate[date_match.end():].strip(" :,-")
+                    candidate = _field_valid(label, raw_candidate)
+                    if candidate:
+                        best = {"value": candidate, "confidence": 85, "trusted": True,
+                                "label_box": box, "value_box": region, "method": "page-layout"}
+                        break
+                except Exception:
+                    pass
             if best["trusted"]:
                 break
         best["regions"] = [best["value_box"]] if best["trusted"] else regions
@@ -1853,6 +1890,15 @@ def _structured_page(image, page_index=0, embedded_words=None):
             words = retry
     table = _ocr_table_box(image)
     fields, field_calls = _ocr_labeled_fields(image, words, table, time.monotonic()+10)
+    # Sparse segmentation can miss values printed below labels in adjacent
+    # columns. A single block-layout retry recovers those words without
+    # weakening confidence gating or guessing metadata.
+    if not embedded_words and any(not item.get("trusted") for item in fields.values()):
+        block_words = _ocr_words(gray, "--psm 6")
+        if len([w for w in block_words if w["confidence"] >= 65]) > len([w for w in words if w["confidence"] >= 65]):
+            words = block_words
+            fields, extra_calls = _ocr_labeled_fields(image, words, table, time.monotonic()+5)
+            field_calls += extra_calls
     reliable, uncertain, table_words = [], [], []
     for word in words:
         text = word["text"]
