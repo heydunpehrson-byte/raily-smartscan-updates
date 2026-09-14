@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from .database import BRAIN_ROOT, connect
 from raily.engine.adapter import process_document
+from raily.filing import resolve_destination
 
 REVIEW = "CONDUCTOR REVIEW"
 LOG = logging.getLogger("raily.worker")
@@ -45,8 +46,7 @@ def process_one(job=None):
         if result['review_required']:
             _finish(job, REVIEW, error_message='Required filing metadata needs conductor review', raw_ocr_context=result.get('raw_text',''), cleaned_ocr_context=result.get('cleaned_text',''), ocr_confidence=result.get('ocr_confidence',0), metadata_json=None)
             LOG.info("job %s -> %s", job['id'], REVIEW); return REVIEW
-        railroad = result['railroad'] or 'Unknown Railroad'; location = result['location'] or 'Unknown Location'
-        destination = BRAIN_ROOT / 'Documents' / 'Railroads' / railroad / location
+        destination = resolve_destination(BRAIN_ROOT, result.get('railroad'), result.get('location'))
         destination.mkdir(parents=True, exist_ok=True)
         target = destination / source.name
         shutil.move(str(source), str(target))

@@ -9,6 +9,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import httpx
 from .preview import PreviewPane
+from raily.filing import filing_components
 
 
 BRAIN_URL = "http://127.0.0.1:8765"
@@ -633,8 +634,12 @@ class RailyWorkstation(tk.Tk):
             def validate(*_):
                 missing = ["document_type"] if not entries["document_type"][0].get().strip() else []
                 for key, (_, entry) in entries.items(): entry.configure(style="Missing.TEntry" if key in missing else "TEntry")
-                railroad = entries["railroad"][0].get().strip() or "Unassigned Railroad"
-                location = entries["location"][0].get().strip() or "General"
+                try:
+                    railroad, location = filing_components(entries['railroad'][0].get(), entries['location'][0].get())
+                except ValueError:
+                    proposed.configure(text='Unsafe destination: correct Railroad/Location')
+                    approve.state(['disabled'])
+                    return
                 proposed.configure(text=f"Proposed filename: {job.get('proposed_filename')}\nProposed destination: {BRAIN_URL} filing root / {railroad} / {location}")
                 approve.state(["!disabled"] if not missing else ["disabled"])
             for var, _ in entries.values(): var.trace_add("write", validate)

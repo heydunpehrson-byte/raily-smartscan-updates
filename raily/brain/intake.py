@@ -13,6 +13,7 @@ from fastapi.responses import Response
 from .preview import render_page
 
 from .database import BRAIN_ROOT, connect
+from raily.filing import resolve_destination
 
 
 router = APIRouter()
@@ -424,7 +425,10 @@ def build_router(current_user, audit):
                     text = (item.get("cleaned_ocr_context") or item.get("raw_ocr_context") or "").casefold()
                     if "irail services group llc" in text and sum(x in text for x in ("start count", "on duty", "total starts")) >= 2:
                         item["ocr"]["category"] = "Work Log / Start Count Log"; item["ocr"]["ocr_confidence"] = max(item["ocr"]["ocr_confidence"], 90)
-                item["proposed_destination"] = str(BRAIN_ROOT / "Documents" / "Railroads" / (stored.get("railroad") or "Unassigned Railroad") / (stored.get("location") or "General"))
+                try:
+                    item["proposed_destination"] = str(resolve_destination(BRAIN_ROOT, stored.get('railroad'), stored.get('location')))
+                except ValueError:
+                    item['proposed_destination'] = 'Unsafe destination: correct Railroad/Location'
                 result.append(item)
             return result
         finally: conn.close()
@@ -453,8 +457,9 @@ def build_router(current_user, audit):
             digest = hashlib.sha256(source.read_bytes()).hexdigest()
             if not row['sha256'] or digest != row['sha256']:
                 raise HTTPException(409, 'Source SHA-256 verification failed')
-            destination = (BRAIN_ROOT / 'Documents' / 'Railroads' / (metadata['railroad'] or 'Unassigned Railroad') / (metadata['location'] or 'General')).resolve()
-            if not destination.is_relative_to((BRAIN_ROOT / 'Documents' / 'Railroads').resolve()):
+            try:
+                destination = resolve_destination(BRAIN_ROOT, metadata['railroad'], metadata['location'])
+            except ValueError:
                 raise HTTPException(400, 'Unsafe filing destination')
             destination.mkdir(parents=True, exist_ok=True)
             target = destination / f"{job_id}__{safe_filename(row['original_name'] or row['document_name'])}"

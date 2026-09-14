@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from fastapi import FastAPI, APIRouter
 from fastapi.testclient import TestClient
-from raily.brain import database, intake
+from raily.brain import database, intake, worker
 
 
 class ReviewFilingTests(unittest.TestCase):
@@ -39,6 +39,21 @@ class ReviewFilingTests(unittest.TestCase):
                 self.assertEqual(conn.execute('SELECT COUNT(*) FROM processing_jobs').fetchone()[0], 1)
                 self.assertEqual(conn.execute('SELECT COUNT(*) FROM learned_rules').fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM audit_events WHERE action='JOB_REVIEW_APPROVED'").fetchone()[0], 1)
+                conn.close()
+                # A normal queued job (also the retry/autoclassification path)
+                # must land beside the reviewed file, not in legacy folders.
+                automatic = root/'automatic.png'
+                automatic.write_bytes(b'automatic document')
+                conn = database.connect()
+                conn.execute("INSERT INTO processing_jobs(document_name,status,stored_path,sha256) VALUES('automatic.png','QUEUED',?,?)", (str(automatic), hashlib.sha256(automatic.read_bytes()).hexdigest()))
+                conn.commit(); conn.close()
+                with patch.object(worker, 'BRAIN_ROOT', root), patch.object(worker, 'process_document', return_value={'railroad':'', 'location':'', 'review_required':False}):
+                    self.assertEqual(worker.process_one(), 'FILED')
+                conn = database.connect()
+                auto_job = conn.execute('SELECT stored_path FROM processing_jobs WHERE id=2').fetchone()
+                self.assertEqual(Path(auto_job['stored_path']).parent, target.parent)
+                self.assertTrue(Path(auto_job['stored_path']).is_file())
+                self.assertFalse((root/'Documents'/'Railroads'/'Unknown Railroad').exists())
                 conn.close()
 
 if __name__ == '__main__': unittest.main()
