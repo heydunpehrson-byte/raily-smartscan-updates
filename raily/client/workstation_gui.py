@@ -623,6 +623,9 @@ class RailyWorkstation(tk.Tk):
             def validate(*_):
                 missing = ["document_type"] if not entries["document_type"][0].get().strip() else []
                 for key, (_, entry) in entries.items(): entry.configure(style="Missing.TEntry" if key in missing else "TEntry")
+                railroad = entries["railroad"][0].get().strip() or "Unassigned Railroad"
+                location = entries["location"][0].get().strip() or "General"
+                proposed.configure(text=f"Proposed filename: {job.get('proposed_filename')}\nProposed destination: {BRAIN_URL} filing root / {railroad} / {location}")
                 approve.state(["!disabled"] if not missing else ["disabled"])
             for var, _ in entries.values(): var.trace_add("write", validate)
             def submit():

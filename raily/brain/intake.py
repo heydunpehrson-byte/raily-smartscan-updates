@@ -415,6 +415,8 @@ def build_router(current_user, audit):
             metadata = {k: str(body.get(k, "")).strip() for k in ("railroad", "location", "document_type", "date", "name")}
             if not metadata["document_type"]:
                 raise HTTPException(status_code=400, detail="Document Type/Category is required")
+            if any(part in metadata["document_type"] for part in ("..", "\\", "/")):
+                raise HTTPException(status_code=400, detail="Unsafe document type")
             conn.execute("UPDATE processing_jobs SET status='FILED', metadata_json=?, review_reason=NULL, error_message=NULL, updated_at=? WHERE id=?", (json.dumps(metadata), datetime.now(timezone.utc).isoformat(), job_id)); conn.commit()
             if body.get("teach"):
                 conn.execute("INSERT INTO learned_rules(rule_type, pattern, correction_json, created_by) VALUES(?,?,?,?)", (body.get("rule_type", "document"), body.get("pattern", ""), json.dumps(metadata), user["username"])); conn.commit()
