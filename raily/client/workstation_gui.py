@@ -601,18 +601,20 @@ class RailyWorkstation(tk.Tk):
             proposed = ttk.Label(window, text=f"Proposed filename: {job.get('proposed_filename')}\nProposed destination: {job.get('proposed_destination')}", justify="left"); proposed.pack(anchor="w", padx=12, pady=6)
             approve = ttk.Button(window, text="Approve / File", state="disabled")
             approve.pack(side="right", padx=12, pady=10)
-            teach = tk.BooleanVar(value=False)
-            ttk.Checkbutton(window, text="Teach RAILY this confirmed correction", variable=teach).pack(anchor="w", padx=12)
+            teach = tk.StringVar(value="document")
+            ttk.Label(window, text="Correction scope:").pack(anchor="w", padx=12)
+            ttk.Radiobutton(window, text="Apply to this document only", variable=teach, value="document").pack(anchor="w", padx=20)
+            ttk.Radiobutton(window, text="Teach RAILY / Save as learned rule", variable=teach, value="learn").pack(anchor="w", padx=20)
             ttk.Button(window, text="Close", command=window.destroy).pack(side="right", pady=10)
             def validate(*_):
-                missing = [k for k in ("railroad", "location", "document_type", "date") if not entries[k][0].get().strip()]
+                missing = ["document_type"] if not entries["document_type"][0].get().strip() else []
                 for key, (_, entry) in entries.items(): entry.configure(style="Missing.TEntry" if key in missing else "TEntry")
                 approve.state(["!disabled"] if not missing else ["disabled"])
             for var, _ in entries.values(): var.trace_add("write", validate)
             def submit():
-                payload={k: v[0].get().strip() for k,v in entries.items()}; payload["teach"] = teach.get()
+                payload={k: v[0].get().strip() for k,v in entries.items()}; payload["teach"] = teach.get() == "learn"
                 if payload["teach"] and not messagebox.askyesno("Confirm learning", "Save this correction as a learned rule for similar documents?", parent=window): return
-                if payload["teach"]: payload["pattern"] = simpledialog.askstring("Learned rule", "Pattern or layout cue to recognize:", parent=window) or ""
+                if payload["teach"]: payload["pattern"] = simpledialog.askstring("Learned rule", "Pattern, alias, filename cue, or layout hint:", parent=window) or ""
                 if not messagebox.askyesno("Confirm approval", "Approve and file this existing job?", parent=window): return
                 try:
                     result=httpx.post(f"{BRAIN_URL}/review/{job['id']}", headers=self.auth_headers(), json=payload, timeout=5.0); result.raise_for_status(); window.destroy(); messagebox.showinfo("Conductor Review", "Job approved and filed.", parent=self); self.refresh_dashboard()

@@ -407,8 +407,8 @@ def build_router(current_user, audit):
             row = conn.execute("SELECT * FROM processing_jobs WHERE id=? AND status='CONDUCTOR REVIEW'", (job_id,)).fetchone()
             if not row: raise HTTPException(status_code=404, detail="Review job not found")
             metadata = {k: str(body.get(k, "")).strip() for k in ("railroad", "location", "document_type", "date", "name")}
-            if not metadata["railroad"] or not metadata["location"] or not metadata["document_type"] or not metadata["date"]:
-                raise HTTPException(status_code=400, detail="Railroad, Location, Document Type, and Date are required")
+            if not metadata["document_type"]:
+                raise HTTPException(status_code=400, detail="Document Type/Category is required")
             conn.execute("UPDATE processing_jobs SET status='FILED', metadata_json=?, review_reason=NULL, error_message=NULL, updated_at=? WHERE id=?", (json.dumps(metadata), datetime.now(timezone.utc).isoformat(), job_id)); conn.commit()
             if body.get("teach"):
                 conn.execute("INSERT INTO learned_rules(rule_type, pattern, correction_json, created_by) VALUES(?,?,?,?)", (body.get("rule_type", "document"), body.get("pattern", ""), json.dumps(metadata), user["username"])); conn.commit()
