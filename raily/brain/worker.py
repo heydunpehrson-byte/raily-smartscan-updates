@@ -2,12 +2,16 @@ from __future__ import annotations
 import hashlib
 import shutil
 import threading
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from .database import BRAIN_ROOT, connect
 from raily.engine.adapter import process_document
 
 REVIEW = "CONDUCTOR REVIEW"
+LOG = logging.getLogger("raily.worker")
+if not LOG.handlers:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s worker: %(message)s")
 
 def claim_job():
     conn = connect()
@@ -18,7 +22,7 @@ def claim_job():
         now = datetime.now(timezone.utc).isoformat()
         conn.execute("UPDATE processing_jobs SET status='PROCESSING', updated_at=? WHERE id=? AND status='QUEUED'", (now, row['id']))
         if conn.total_changes != 1: conn.rollback(); return None
-        conn.commit(); return dict(row)
+        conn.commit(); LOG.info("claimed job %s (%s)", row['id'], row['document_name']); return dict(row)
     finally: conn.close()
 
 def _finish(job, status, **fields):
@@ -40,7 +44,7 @@ def process_one(job=None):
         result = process_document(source)
         if result['review_required']:
             _finish(job, REVIEW, error_message='Required filing metadata needs conductor review')
-            return REVIEW
+            LOG.info("job %s -> %s", job['id'], REVIEW); return REVIEW
         railroad = result['railroad'] or 'Unknown Railroad'; location = result['location'] or 'Unknown Location'
         destination = BRAIN_ROOT / 'Documents' / 'Railroads' / railroad / location
         destination.mkdir(parents=True, exist_ok=True)
@@ -48,11 +52,12 @@ def process_one(job=None):
         shutil.move(str(source), str(target))
         if not target.exists(): raise IOError('Destination verification failed')
         _finish(job, 'FILED', stored_path=str(target), error_message=None)
-        return 'FILED'
+        LOG.info("job %s -> FILED (%s)", job['id'], target); return 'FILED'
     except Exception as exc:
-        _finish(job, 'ERROR', error_message=str(exc)); return 'ERROR'
+        LOG.exception("job %s -> ERROR: %s", job['id'], exc); _finish(job, 'ERROR', error_message=str(exc)); return 'ERROR'
 
 def worker_loop(stop_event: threading.Event):
+    LOG.info("worker started; database=%s", BRAIN_ROOT / 'Data' / 'raily.db')
     while not stop_event.is_set():
         process_one()
         stop_event.wait(0.25)
