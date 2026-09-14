@@ -5,7 +5,7 @@ $pythonw = Join-Path $project '.venv-brain\Scripts\pythonw.exe'
 if (-not (Test-Path -LiteralPath $pythonw)) { throw 'RAILY Python environment not found.' }
 $desktop = [Environment]::GetFolderPath('Desktop')
 $shell = New-Object -ComObject WScript.Shell
-foreach ($item in @(@('RAILY','Start-RAILY.pyw','raily.ico'), @('RAILY Diagnostics','RAILY-Diagnostics.pyw','raily-diagnostics.ico'))) {
+foreach ($item in @(@('RAILY','Start-RAILY.pyw','RAILY.ico'), @('RAILY Diagnostics','RAILY-Diagnostics.pyw','RAILY_Diagnostics.ico'))) {
     $link = $shell.CreateShortcut((Join-Path $desktop ($item[0] + '.lnk')))
     $link.TargetPath = $pythonw
     $link.Arguments = '"' + (Join-Path $project $item[1]) + '"'
