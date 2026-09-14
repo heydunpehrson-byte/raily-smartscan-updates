@@ -56,3 +56,10 @@ def worker_loop(stop_event: threading.Event):
     while not stop_event.is_set():
         process_one()
         stop_event.wait(0.25)
+
+if __name__ == "__main__":
+    stop = threading.Event()
+    try:
+        worker_loop(stop)
+    except KeyboardInterrupt:
+        stop.set()
