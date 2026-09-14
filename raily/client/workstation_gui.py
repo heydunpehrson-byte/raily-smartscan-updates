@@ -130,7 +130,7 @@ class RailyWorkstation(tk.Tk):
     def show_login(self):
         self.clear()
 
-        self.geometry("480x440")
+        self._set_login_geometry()
         self.resizable(False, False)
 
         outer = ttk.Frame(self, style="Dark.TFrame", padding=30)
@@ -218,6 +218,20 @@ class RailyWorkstation(tk.Tk):
 
         self.after(200, self.check_brain)
         self.after(400, self.password_entry.focus_set)
+
+    def _set_login_geometry(self):
+        """Size and center the login view for common Windows DPI settings."""
+        try:
+            scale = float(self.tk.call("tk", "scaling"))
+        except Exception:
+            scale = 1.0
+        width = max(500, min(620, int(500 * max(1.0, scale / 1.25))))
+        height = max(540, min(680, int(560 * max(1.0, scale / 1.25))))
+        self.update_idletasks()
+        screen_w, screen_h = self.winfo_screenwidth(), self.winfo_screenheight()
+        x = max(0, (screen_w - width) // 2)
+        y = max(0, (screen_h - height) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def check_brain(self):
         generation = self._view_generation

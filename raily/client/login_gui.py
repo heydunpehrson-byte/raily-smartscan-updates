@@ -45,7 +45,7 @@ class RailyLogin(tk.Tk):
         super().__init__()
 
         self.title("RAILY — Dispatch Brain Sign In")
-        self.geometry("470x430")
+        self._set_login_geometry()
         self.resizable(False, False)
 
         self.session_token = None
@@ -175,6 +175,18 @@ class RailyLogin(tk.Tk):
         self.password_entry.bind("<Return>", lambda _e: self.login())
 
         self.after(500, self.password_entry.focus_set)
+
+    def _set_login_geometry(self):
+        try:
+            scale = float(self.tk.call("tk", "scaling"))
+        except Exception:
+            scale = 1.0
+        width = max(500, min(620, int(500 * max(1.0, scale / 1.25))))
+        height = max(540, min(680, int(560 * max(1.0, scale / 1.25))))
+        self.update_idletasks()
+        x = max(0, (self.winfo_screenwidth() - width) // 2)
+        y = max(0, (self.winfo_screenheight() - height) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def set_brain_state(self, online: bool):
         if online:
