@@ -33,10 +33,11 @@ FIELD_LABELS = {
     "name": ("name", "employee", "conductor"),
     "date": ("start date", "date", "effective date"),
 }
+STATIC_TEMPLATE_ANCHORS = ("irail services group llc", "start count", "on duty", "time off", "total starts")
 
 def _value(text, labels):
     for label in labels:
-        match = re.search(rf"{re.escape(label)}\s*[:#-]\s*(.+)", text, re.I)
+        match = re.search(rf"{re.escape(label)}[ \t]*[:#-][ \t]*([^\r\n]+)", text, re.I)
         if match:
             value = match.group(1).strip().splitlines()[0].strip()
             if value:
@@ -61,8 +62,12 @@ def process_document(path: str | Path) -> dict:
             try:
                 date = datetime.strptime(raw_date, fmt).date().isoformat(); break
             except ValueError: pass
-    classification = "Work Document" if text else None
-    confidence = sum(bool(x) for x in (railroad, location, classification)) / 3
+    normalized = re.sub(r"\s+", " ", text.casefold())
+    anchor_hits = sum(anchor in normalized for anchor in STATIC_TEMPLATE_ANCHORS)
+    classification = "Work Log / Start Count Log" if anchor_hits >= 2 else ("Work Document" if text else None)
+    # Blank variable fields are expected for a template; static anchors provide
+    # the confidence signal and never fabricate a person, railroad, or date.
+    confidence = min(1.0, anchor_hits / 3) if anchor_hits else (1 / 3 if classification else 0)
     return {"text": text, "railroad": railroad, "location": location, "name": name,
             "date": date, "category": classification, "confidence": confidence,
-            "review_required": confidence < 1.0}
+            "review_required": not classification}
