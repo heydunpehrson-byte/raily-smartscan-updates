@@ -442,6 +442,10 @@ class RailyWorkstation(tk.Tk):
 
             if key == "review" and self.role in {"Administrator", "Conductor / Reviewer"}:
                 card.bind("<Button-1>", lambda _e: self.show_review_queue())
+            if key == 'duplicates':
+                card.bind('<Button-1>', lambda _e: self.show_duplicates())
+                for child in card.winfo_children():
+                    child.bind('<Button-1>', lambda _e: self.show_duplicates())
 
         middle = ttk.Frame(content, style="Dark.TFrame")
         middle.pack(fill="both", expand=True)
@@ -597,6 +601,15 @@ class RailyWorkstation(tk.Tk):
             self.refresh_dashboard()
         except Exception as exc:
             messagebox.showerror("RAILY", f"Retry failed.\n\n{exc}", parent=self)
+
+    def show_duplicates(self):
+        try:
+            response = httpx.get(f'{BRAIN_URL}/jobs', headers=self.auth_headers(), params={'limit':500}, timeout=5)
+            response.raise_for_status()
+            jobs = [job for job in response.json() if job['status'] == 'DUPLICATE SIDING']
+            messagebox.showinfo('Duplicate Siding', '\n\n'.join(f"Job {job['id']}: {job['document_name']}\n{job.get('error_message') or ''}" for job in jobs) or 'No duplicates awaiting review.', parent=self)
+        except Exception:
+            messagebox.showerror('Duplicate Siding', 'Unable to load duplicates. Check the Brain connection.', parent=self)
 
     def show_review_queue(self):
         try:

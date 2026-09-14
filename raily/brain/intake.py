@@ -14,6 +14,7 @@ from .preview import render_page
 
 from .database import BRAIN_ROOT, connect
 from raily.filing import resolve_destination
+from .duplicates import route_duplicate
 
 
 router = APIRouter()
@@ -68,6 +69,7 @@ def ensure_intake_schema():
             "error_message": "TEXT",
             "metadata_json": "TEXT",
             "review_reason": "TEXT",
+            "duplicate_of_job_id": "INTEGER",
             "raw_ocr_context": "TEXT", "cleaned_ocr_context": "TEXT", "ocr_confidence": "REAL",
         }
 
@@ -457,6 +459,10 @@ def build_router(current_user, audit):
             digest = hashlib.sha256(source.read_bytes()).hexdigest()
             if not row['sha256'] or digest != row['sha256']:
                 raise HTTPException(409, 'Source SHA-256 verification failed')
+            matched = route_duplicate(conn, BRAIN_ROOT, dict(row), source, digest)
+            if matched:
+                conn.commit()
+                return {'job_id': job_id, 'status': 'DUPLICATE SIDING', 'matched_job_id': matched}
             try:
                 destination = resolve_destination(BRAIN_ROOT, metadata['railroad'], metadata['location'])
             except ValueError:

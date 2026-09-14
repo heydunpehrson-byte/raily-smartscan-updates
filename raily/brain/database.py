@@ -85,12 +85,13 @@ def initialize_database():
         for name, definition in {
             "job_uuid":"TEXT", "original_name":"TEXT", "stored_path":"TEXT",
             "sha256":"TEXT", "size_bytes":"INTEGER", "submitted_by":"TEXT",
-            "error_message":"TEXT"
+            "error_message":"TEXT", "duplicate_of_job_id":"INTEGER", "metadata_json":"TEXT", "review_reason":"TEXT"
             ,"raw_ocr_context":"TEXT", "cleaned_ocr_context":"TEXT", "ocr_confidence":"REAL"
         }.items():
             if name not in columns:
                 conn.execute(f"ALTER TABLE processing_jobs ADD COLUMN {name} {definition}")
 
+        conn.execute('CREATE INDEX IF NOT EXISTS jobs_content_hash ON processing_jobs(sha256, status)')
         conn.commit()
     finally:
         conn.close()
