@@ -590,23 +590,30 @@ class RailyWorkstation(tk.Tk):
                 messagebox.showinfo("Conductor Review", "No jobs are awaiting review.", parent=self); return
             job = jobs[0]
             ocr = job.get("ocr") or {}
-            detail = (f"Job {job.get('id')}\nFile: {job.get('original_name') or job.get('document_name')}\n"
-                      f"OCR context: {ocr.get('text','')[:800]}\n"
-                      f"Proposed filename: {job.get('proposed_filename')}\n"
-                      f"Proposed destination: {job.get('proposed_destination')}\n"
-                      "Fields marked [missing] must be corrected before approval.")
-            if messagebox.askyesno("Conductor Review", detail + "\n\nEdit filing fields?", parent=self):
-                payload = {"railroad": simpledialog.askstring("Railroad", "Railroad:", initialvalue=ocr.get("railroad") or "", parent=self) or "",
-                           "location": simpledialog.askstring("Location", "Location:", initialvalue=ocr.get("location") or "", parent=self) or "",
-                           "document_type": simpledialog.askstring("Document type", "Document type/category:", initialvalue=ocr.get("category") or "", parent=self) or "",
-                           "date": simpledialog.askstring("Document date", "Document date:", initialvalue=ocr.get("date") or "", parent=self) or "",
-                           "name": simpledialog.askstring("Name", "Person/Name (optional):", initialvalue=ocr.get("name") or "", parent=self) or ""}
-                if not all(payload[k] for k in ("railroad", "location", "document_type", "date")):
-                    messagebox.showwarning("Conductor Review", "Railroad, Location, Document Type, and Date are required.", parent=self); return
-                if not messagebox.askyesno("Confirm approval", "Approve and file this existing job with these fields?", parent=self):
-                    return
-                result = httpx.post(f"{BRAIN_URL}/review/{job['id']}", headers=self.auth_headers(), json=payload, timeout=5.0)
-                result.raise_for_status(); messagebox.showinfo("Conductor Review", "Job approved and filed.", parent=self); self.refresh_dashboard()
+            window = tk.Toplevel(self); window.title(f"Conductor Review — Job {job['id']}"); window.geometry("760x620"); window.transient(self)
+            ttk.Label(window, text=f"File: {job.get('original_name') or job.get('document_name')}\nReview reason: {job.get('review_reason') or job.get('error_message') or 'Low confidence / missing metadata'}", justify="left").pack(anchor="w", padx=12, pady=8)
+            ttk.Label(window, text=f"OCR context:\n{(ocr.get('text') or '')[:1400]}", justify="left", wraplength=720).pack(anchor="w", padx=12)
+            form = ttk.Frame(window); form.pack(fill="x", padx=12, pady=8)
+            values = {"railroad": ocr.get("railroad") or "", "location": ocr.get("location") or "", "document_type": ocr.get("category") or "", "date": ocr.get("date") or "", "name": ocr.get("name") or ""}
+            entries = {}
+            for row, (key, label) in enumerate((("railroad","Railroad"),("location","Location"),("document_type","Document Type/Category"),("date","Document Date"),("name","Person/Name (optional)"))):
+                ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=3); var=tk.StringVar(value=values[key]); entry=ttk.Entry(form, textvariable=var, width=58); entry.grid(row=row, column=1, sticky="ew", pady=3); entries[key]=(var, entry)
+            proposed = ttk.Label(window, text=f"Proposed filename: {job.get('proposed_filename')}\nProposed destination: {job.get('proposed_destination')}", justify="left"); proposed.pack(anchor="w", padx=12, pady=6)
+            approve = ttk.Button(window, text="Approve / File", state="disabled")
+            approve.pack(side="right", padx=12, pady=10)
+            ttk.Button(window, text="Close", command=window.destroy).pack(side="right", pady=10)
+            def validate(*_):
+                missing = [k for k in ("railroad", "location", "document_type", "date") if not entries[k][0].get().strip()]
+                for key, (_, entry) in entries.items(): entry.configure(style="Missing.TEntry" if key in missing else "TEntry")
+                approve.state(["!disabled"] if not missing else ["disabled"])
+            for var, _ in entries.values(): var.trace_add("write", validate)
+            def submit():
+                payload={k: v[0].get().strip() for k,v in entries.items()}
+                if not messagebox.askyesno("Confirm approval", "Approve and file this existing job?", parent=window): return
+                try:
+                    result=httpx.post(f"{BRAIN_URL}/review/{job['id']}", headers=self.auth_headers(), json=payload, timeout=5.0); result.raise_for_status(); window.destroy(); messagebox.showinfo("Conductor Review", "Job approved and filed.", parent=self); self.refresh_dashboard()
+                except Exception as exc: messagebox.showerror("Conductor Review", str(exc), parent=window)
+            approve.configure(command=submit); validate()
         except Exception as exc:
             messagebox.showerror("Conductor Review", str(exc), parent=self)
 
