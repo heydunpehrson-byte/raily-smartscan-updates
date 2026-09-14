@@ -1,5 +1,6 @@
 ﻿from datetime import datetime, timezone
 import sqlite3
+import os
 import threading
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -21,6 +22,9 @@ _worker_thread = None
 
 VALID_ROLES = {
     "Administrator",
+    "Admin",
+    "Supervisor",
+    "User",
     "Conductor / Reviewer",
     "Scanner Operator",
     "Viewer",
@@ -87,7 +91,7 @@ def current_user(authorization: str = Header(default="")):
 
 
 def administrator(user=Depends(current_user)):
-    if user["role"] != "Administrator":
+    if user["role"] not in {"Administrator", "Admin"}:
         raise HTTPException(status_code=403, detail="Administrator access required")
     return user
 
@@ -125,7 +129,23 @@ def health():
         "version": VERSION,
         "worker_alive": bool(_worker_thread and _worker_thread.is_alive()),
         "database": str(DB_PATH),
-        "connection": "localhost",
+        "connection": os.environ.get("RAILY_BIND_HOST", "127.0.0.1"),
+        "port": int(os.environ.get("RAILY_PORT", "8765")),
+    }
+
+
+@app.get("/connection")
+def connection_status():
+    """Read-only discovery information for a trusted workstation."""
+    bind = os.environ.get("RAILY_BIND_HOST", "127.0.0.1")
+    return {
+        "service": "RAILY Dispatch Brain",
+        "protocol": "http",
+        "host": bind,
+        "port": int(os.environ.get("RAILY_PORT", "8765")),
+        "login": "/login",
+        "authenticated_routes": True,
+        "lan_only": bind not in {"127.0.0.1", "localhost", "::1"},
     }
 
 

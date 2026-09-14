@@ -36,6 +36,8 @@ ALLOWED_EXTENSIONS = {
 
 MAX_UPLOAD_BYTES = 500 * 1024 * 1024
 
+REVIEW_ROLES = {"Administrator", "Admin", "Supervisor", "Conductor / Reviewer"}
+
 
 def safe_filename(name: str) -> str:
     name = Path(name or "document").name
@@ -366,7 +368,7 @@ def build_router(current_user, audit):
 
     @router.post("/jobs/{job_id}/retry")
     def retry_job(job_id: int, user=Depends(current_user)):
-        if user["role"] not in {"Administrator", "Conductor / Reviewer"}:
+        if user["role"] not in REVIEW_ROLES:
             raise HTTPException(status_code=403, detail="Conductor or Administrator access required")
         ensure_intake_schema()
         conn = connect()
@@ -385,7 +387,7 @@ def build_router(current_user, audit):
 
     @router.get("/review/{job_id}/preview")
     def document_preview(job_id: int, page: int = 0, user=Depends(current_user)):
-        if user['role'] not in {'Administrator', 'Conductor / Reviewer'}:
+        if user['role'] not in REVIEW_ROLES:
             raise HTTPException(403, 'Conductor or Administrator access required')
         conn = connect()
         try:
@@ -407,7 +409,7 @@ def build_router(current_user, audit):
 
     @router.get("/review")
     def review_queue(user=Depends(current_user)):
-        if user["role"] not in {"Administrator", "Conductor / Reviewer"}:
+        if user["role"] not in REVIEW_ROLES:
             raise HTTPException(status_code=403, detail="Conductor or Administrator access required")
         ensure_intake_schema(); conn = connect()
         try:
@@ -437,7 +439,7 @@ def build_router(current_user, audit):
 
     @router.post("/review/{job_id}")
     def complete_review(job_id: int, body: dict, user=Depends(current_user)):
-        if user["role"] not in {"Administrator", "Conductor / Reviewer"}:
+        if user["role"] not in REVIEW_ROLES:
             raise HTTPException(status_code=403, detail="Conductor or Administrator access required")
         ensure_intake_schema(); conn = connect()
         try:
@@ -488,14 +490,14 @@ def build_router(current_user, audit):
 
     @router.get("/admin/learned-rules")
     def learned_rules(user=Depends(current_user)):
-        if user["role"] not in {"Administrator", "Conductor / Reviewer"}: raise HTTPException(status_code=403, detail="Conductor or Administrator access required")
+        if user["role"] not in REVIEW_ROLES: raise HTTPException(status_code=403, detail="Conductor or Administrator access required")
         conn=connect()
         try: return [dict(x) for x in conn.execute("SELECT * FROM learned_rules ORDER BY id DESC").fetchall()]
         finally: conn.close()
 
     @router.patch("/admin/learned-rules/{rule_id}")
     def edit_learned_rule(rule_id: int, body: dict, user=Depends(current_user)):
-        if user["role"] != "Administrator": raise HTTPException(status_code=403, detail="Administrator access required")
+        if user["role"] not in {"Administrator", "Admin"}: raise HTTPException(status_code=403, detail="Administrator access required")
         conn=connect()
         try: conn.execute("UPDATE learned_rules SET enabled=COALESCE(?,enabled), pattern=COALESCE(?,pattern), updated_at=? WHERE id=?", (body.get("enabled"), body.get("pattern"), datetime.now(timezone.utc).isoformat(), rule_id)); conn.commit()
         finally: conn.close()
@@ -504,7 +506,7 @@ def build_router(current_user, audit):
 
     @router.delete("/admin/learned-rules/{rule_id}")
     def delete_learned_rule(rule_id: int, user=Depends(current_user)):
-        if user["role"] != "Administrator": raise HTTPException(status_code=403, detail="Administrator access required")
+        if user["role"] not in {"Administrator", "Admin"}: raise HTTPException(status_code=403, detail="Administrator access required")
         conn=connect()
         try: conn.execute("DELETE FROM learned_rules WHERE id=?", (rule_id,)); conn.commit()
         finally: conn.close()

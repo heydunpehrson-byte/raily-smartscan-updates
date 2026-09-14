@@ -9,7 +9,7 @@ from tkinter import messagebox, ttk
 import httpx
 
 
-BRAIN_URL = "http://127.0.0.1:8765"
+BRAIN_URL = os.environ.get("RAILY_BRAIN_URL", "http://127.0.0.1:8765")
 
 APP_DATA = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "RAILY"
 APP_DATA.mkdir(parents=True, exist_ok=True)

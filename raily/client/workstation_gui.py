@@ -15,7 +15,7 @@ from raily.filing import filing_components
 from raily.desktop.ui import ScrollFrame, center, apply_icon, avatar
 
 
-BRAIN_URL = "http://127.0.0.1:8765"
+BRAIN_URL = os.environ.get("RAILY_BRAIN_URL", "http://127.0.0.1:8765")
 
 APP_DATA = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "RAILY"
 APP_DATA.mkdir(parents=True, exist_ok=True)
@@ -466,7 +466,7 @@ class RailyWorkstation(tk.Tk):
                 style="CardValue.TLabel",
             ).pack(pady=(4, 0))
 
-            if key == "review" and self.role in {"Administrator", "Conductor / Reviewer"}:
+            if key == "review" and self.role in {"Administrator", "Admin", "Supervisor", "Conductor / Reviewer"}:
                 card.bind("<Button-1>", lambda _e: self.show_review_queue())
             if key == 'duplicates':
                 card.bind('<Button-1>', lambda _e: self.show_duplicates())
@@ -579,14 +579,14 @@ class RailyWorkstation(tk.Tk):
             command=self.refresh_dashboard,
         ).pack(side="right", padx=(8, 0))
 
-        if self.role == "Administrator":
+        if self.role in {"Administrator", "Admin"}:
             ttk.Button(
                 footer,
                 text="Users",
                 command=self.show_users,
             ).pack(side="right", padx=(8, 0))
 
-        if self.role in {"Administrator", "Conductor / Reviewer"}:
+        if self.role in {"Administrator", "Admin", "Supervisor", "Conductor / Reviewer"}:
             ttk.Button(
                 footer,
                 text="Retry Job",

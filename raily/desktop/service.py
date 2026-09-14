@@ -1,5 +1,6 @@
 """Managed services stop cooperatively; never kill unrelated processes."""
 import sys
+import os
 import threading
 import time
 from .runtime import SingleInstance, STATE, configure_logging, mark_running, legacy_workstation
@@ -16,7 +17,9 @@ def main(mode):
         mark_running(mode)
         if mode == 'brain':
             import uvicorn
-            server = uvicorn.Server(uvicorn.Config('raily.brain.app:app', host='127.0.0.1', port=8765, log_level='info', timeout_graceful_shutdown=40))
+            bind_host = os.environ.get('RAILY_BIND_HOST', '127.0.0.1')
+            bind_port = int(os.environ.get('RAILY_PORT', '8765'))
+            server = uvicorn.Server(uvicorn.Config('raily.brain.app:app', host=bind_host, port=bind_port, log_level='info', timeout_graceful_shutdown=40))
             def watch():
                 while not server.should_exit:
                     if (STATE/'brain.stop').exists():
