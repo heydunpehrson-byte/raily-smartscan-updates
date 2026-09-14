@@ -55,6 +55,7 @@ class RailyWorkstation(tk.Tk):
         self.username = None
         self.role = None
         self.refresh_job = None
+        self._view_generation = 0
 
         self.setup_styles()
         self.show_login()
@@ -115,6 +116,7 @@ class RailyWorkstation(tk.Tk):
         )
 
     def clear(self):
+        self._view_generation += 1
         if self.refresh_job:
             try:
                 self.after_cancel(self.refresh_job)
@@ -218,6 +220,7 @@ class RailyWorkstation(tk.Tk):
         self.after(400, self.password_entry.focus_set)
 
     def check_brain(self):
+        generation = self._view_generation
         def worker():
             online = False
 
@@ -232,7 +235,7 @@ class RailyWorkstation(tk.Tk):
 
             self.after(
                 0,
-                lambda: self.update_brain_status(online)
+                lambda: self.update_brain_status(online, generation)
             )
 
         threading.Thread(
@@ -240,27 +243,41 @@ class RailyWorkstation(tk.Tk):
             daemon=True,
         ).start()
 
-    def update_brain_status(self, online):
-        if not self.winfo_exists():
+    def update_brain_status(self, online, generation=None):
+        if generation is not None and generation != self._view_generation:
+            return
+        try:
+            if not self.winfo_exists() or not self.status_box.winfo_exists():
+                return
+        except (tk.TclError, AttributeError):
             return
 
         if online:
-            self.status_var.set("● DISPATCH TOWER CONNECTED")
-            self.status_box.configure(
-                bg="#153222",
-                fg="#5ce18b",
-            )
-            self.signin_button.state(["!disabled"])
+            try:
+                self.status_var.set("● DISPATCH TOWER CONNECTED")
+            except tk.TclError:
+                return
+            try:
+                self.status_box.configure(bg="#153222", fg="#5ce18b")
+                self.signin_button.state(["!disabled"])
+            except tk.TclError:
+                return
 
         else:
-            self.status_var.set("● DISPATCH TOWER OFFLINE")
-            self.status_box.configure(
-                bg="#30201d",
-                fg="#ff7b72",
-            )
-            self.signin_button.state(["disabled"])
+            try:
+                self.status_var.set("● DISPATCH TOWER OFFLINE")
+            except tk.TclError:
+                return
+            try:
+                self.status_box.configure(bg="#30201d", fg="#ff7b72")
+                self.signin_button.state(["disabled"])
+            except tk.TclError:
+                return
 
-        self.after(5000, self.check_brain)
+        try:
+            self.after(5000, self.check_brain)
+        except tk.TclError:
+            pass
 
     def login(self):
         username = self.user_entry.get().strip()
