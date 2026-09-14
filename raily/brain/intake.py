@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from .database import BRAIN_ROOT, connect
+from raily.engine.adapter import process_document
 
 
 router = APIRouter()
@@ -383,7 +384,18 @@ def build_router(current_user, audit):
         ensure_intake_schema(); conn = connect()
         try:
             rows = conn.execute("SELECT * FROM processing_jobs WHERE status='CONDUCTOR REVIEW' ORDER BY updated_at DESC").fetchall()
-            return [dict(row) for row in rows]
+            result = []
+            for row in rows:
+                item = dict(row)
+                try:
+                    ocr = process_document(row["stored_path"]) if row["stored_path"] else {}
+                except Exception as exc:
+                    ocr = {"error": str(exc)}
+                item["ocr"] = ocr
+                item["proposed_filename"] = row["original_name"] or row["document_name"]
+                item["proposed_destination"] = str(BRAIN_ROOT / "Documents" / "Railroads" / (ocr.get("railroad") or "[Railroad required]") / (ocr.get("location") or "[Location required]"))
+                result.append(item)
+            return result
         finally: conn.close()
 
     @router.post("/review/{job_id}")
@@ -395,7 +407,8 @@ def build_router(current_user, audit):
             row = conn.execute("SELECT * FROM processing_jobs WHERE id=? AND status='CONDUCTOR REVIEW'", (job_id,)).fetchone()
             if not row: raise HTTPException(status_code=404, detail="Review job not found")
             metadata = {k: str(body.get(k, "")).strip() for k in ("railroad", "location", "document_type", "date", "name")}
-            if not metadata["railroad"] or not metadata["location"]: raise HTTPException(status_code=400, detail="Railroad and Location are required")
+            if not metadata["railroad"] or not metadata["location"] or not metadata["document_type"] or not metadata["date"]:
+                raise HTTPException(status_code=400, detail="Railroad, Location, Document Type, and Date are required")
             conn.execute("UPDATE processing_jobs SET status='FILED', metadata_json=?, review_reason=NULL, error_message=NULL, updated_at=? WHERE id=?", (json.dumps(metadata), datetime.now(timezone.utc).isoformat(), job_id)); conn.commit()
         finally: conn.close()
         audit(user["username"], user["workstation_id"], "JOB_REVIEW_APPROVED", f"Approved job {job_id} with corrected metadata")

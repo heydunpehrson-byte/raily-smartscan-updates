@@ -589,14 +589,21 @@ class RailyWorkstation(tk.Tk):
             if not jobs:
                 messagebox.showinfo("Conductor Review", "No jobs are awaiting review.", parent=self); return
             job = jobs[0]
-            detail = "\n".join(f"{k}: {job.get(k, '')}" for k in ("id", "original_name", "status", "error_message", "review_reason", "metadata_json"))
-            if messagebox.askyesno("Conductor Review", detail + "\n\nApprove and file this job?", parent=self):
-                payload = {"railroad": simpledialog.askstring("Railroad", "Railroad:", parent=self) or "",
-                           "location": simpledialog.askstring("Location", "Location:", parent=self) or "",
-                           "document_type": simpledialog.askstring("Document type", "Document type:", parent=self) or "",
-                           "date": simpledialog.askstring("Document date", "Document date:", parent=self) or "",
-                           "name": simpledialog.askstring("Name", "Name:", parent=self) or ""}
-                if not payload["railroad"] or not payload["location"]:
+            ocr = job.get("ocr") or {}
+            detail = (f"Job {job.get('id')}\nFile: {job.get('original_name') or job.get('document_name')}\n"
+                      f"OCR context: {ocr.get('text','')[:800]}\n"
+                      f"Proposed filename: {job.get('proposed_filename')}\n"
+                      f"Proposed destination: {job.get('proposed_destination')}\n"
+                      "Fields marked [missing] must be corrected before approval.")
+            if messagebox.askyesno("Conductor Review", detail + "\n\nEdit filing fields?", parent=self):
+                payload = {"railroad": simpledialog.askstring("Railroad", "Railroad:", initialvalue=ocr.get("railroad") or "", parent=self) or "",
+                           "location": simpledialog.askstring("Location", "Location:", initialvalue=ocr.get("location") or "", parent=self) or "",
+                           "document_type": simpledialog.askstring("Document type", "Document type/category:", initialvalue=ocr.get("category") or "", parent=self) or "",
+                           "date": simpledialog.askstring("Document date", "Document date:", initialvalue=ocr.get("date") or "", parent=self) or "",
+                           "name": simpledialog.askstring("Name", "Person/Name (optional):", initialvalue=ocr.get("name") or "", parent=self) or ""}
+                if not all(payload[k] for k in ("railroad", "location", "document_type", "date")):
+                    messagebox.showwarning("Conductor Review", "Railroad, Location, Document Type, and Date are required.", parent=self); return
+                if not messagebox.askyesno("Confirm approval", "Approve and file this existing job with these fields?", parent=self):
                     return
                 result = httpx.post(f"{BRAIN_URL}/review/{job['id']}", headers=self.auth_headers(), json=payload, timeout=5.0)
                 result.raise_for_status(); messagebox.showinfo("Conductor Review", "Job approved and filed.", parent=self); self.refresh_dashboard()
