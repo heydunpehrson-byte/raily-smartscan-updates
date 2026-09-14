@@ -3,12 +3,15 @@ import hashlib
 import shutil
 import threading
 import logging
+import json
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from .database import BRAIN_ROOT, connect
 from raily.engine.adapter import process_document
 from raily.filing import resolve_destination
 from .duplicates import route_duplicate
+from .learning import apply_rules
 
 REVIEW = "CONDUCTOR REVIEW"
 LOG = logging.getLogger("raily.worker")
@@ -53,6 +56,7 @@ def process_one(job=None):
             return 'DUPLICATE SIDING'
         conn.commit()
         result = process_document(source)
+        result = apply_rules(conn, result, job.get('original_name') or job['document_name'])
         # OCR holds no database lock. Serialize the final check and transition
         # so concurrent workers cannot both accept identical queued uploads.
         conn.execute('BEGIN IMMEDIATE')
@@ -60,15 +64,24 @@ def process_one(job=None):
             conn.commit()
             return 'DUPLICATE SIDING'
         if result['review_required']:
-            _finish(job, REVIEW, conn=conn, error_message='Required filing metadata needs conductor review', raw_ocr_context=result.get('raw_text',''), cleaned_ocr_context=result.get('cleaned_text',''), ocr_confidence=result.get('ocr_confidence',0), metadata_json=None)
+            _finish(job, REVIEW, conn=conn, error_message='Required filing metadata needs conductor review', raw_ocr_context=result.get('raw_text',''), cleaned_ocr_context=result.get('cleaned_text',''), ocr_confidence=result.get('ocr_confidence',0), metadata_json=json.dumps(result))
             conn.commit()
             LOG.info("job %s -> %s", job['id'], REVIEW); return REVIEW
         destination = resolve_destination(BRAIN_ROOT, result.get('railroad'), result.get('location'))
         destination.mkdir(parents=True, exist_ok=True)
         target = destination / source.name
-        shutil.move(str(source), str(target))
+        while True:
+            try:
+                with target.open('xb') as output, source.open('rb') as input_file:
+                    shutil.copyfileobj(input_file, output)
+                break
+            except FileExistsError:
+                target = destination / f'{job["id"]}__{uuid.uuid4().hex}__{source.name}'
+        if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+            raise IOError('Destination hash verification failed; source preserved')
         if not target.exists(): raise IOError('Destination verification failed')
-        _finish(job, 'FILED', conn=conn, stored_path=str(target), error_message=None)
+        _finish(job, 'FILED', conn=conn, stored_path=str(target), error_message=None, metadata_json=json.dumps(result), raw_ocr_context=result.get('raw_text',''), cleaned_ocr_context=result.get('cleaned_text',''), ocr_confidence=result.get('ocr_confidence'))
+        conn.execute('INSERT INTO audit_events(username,workstation,action,details) VALUES(?,?,?,?)', (job.get('submitted_by'), job.get('source_workstation'), 'JOB_FILED', json.dumps({'job_id':job['id'], 'destination':str(target), 'learned_rule_ids':result.get('learned_rule_ids', [])})))
         conn.commit()
         LOG.info("job %s -> FILED (%s)", job['id'], target); return 'FILED'
     except Exception as exc:
@@ -80,7 +93,11 @@ def process_one(job=None):
 def worker_loop(stop_event: threading.Event):
     LOG.info("worker started; database=%s", BRAIN_ROOT / 'Data' / 'raily.db')
     while not stop_event.is_set():
-        process_one()
+        try:
+            process_one()
+        except Exception:
+            LOG.exception('Worker poll failed; will retry after a short pause')
+            stop_event.wait(2)
         stop_event.wait(0.25)
 
 if __name__ == "__main__":

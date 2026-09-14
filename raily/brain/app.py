@@ -9,11 +9,12 @@ from .auth import hash_password, verify_password
 from .database import DB_PATH, connect, initialize_database
 from .sessions import create_session, get_session, revoke_session
 from .worker import worker_loop
+from raily.version import VERSION
 
 
 app = FastAPI(
     title="RAILY Dispatch Brain",
-    version="73.0-local",
+    version=VERSION,
 )
 _worker_stop = threading.Event()
 _worker_thread = None
@@ -109,12 +110,20 @@ def startup():
         _worker_thread.start()
 
 
+@app.on_event('shutdown')
+def shutdown():
+    _worker_stop.set()
+    if _worker_thread:
+        _worker_thread.join(timeout=35)
+
+
 @app.get("/health")
 def health():
     return {
         "status": "online",
         "service": "RAILY Dispatch Brain",
-        "version": "73.0-local",
+        "version": VERSION,
+        "worker_alive": bool(_worker_thread and _worker_thread.is_alive()),
         "database": str(DB_PATH),
         "connection": "localhost",
     }
@@ -510,15 +519,6 @@ from .dashboard import get_dashboard_data
 @app.get("/dashboard")
 def dispatch_dashboard(user=Depends(current_user)):
     return get_dashboard_data(user)
-
-from .intake import build_router
-
-app.include_router(
-    build_router(
-        current_user=current_user,
-        audit=audit,
-    )
-)
 
 from .intake import build_router
 

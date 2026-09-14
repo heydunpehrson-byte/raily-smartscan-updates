@@ -3,6 +3,7 @@ import shutil
 from datetime import datetime, timezone
 
 import psutil
+from raily.version import VERSION
 
 from .database import BRAIN_ROOT, connect
 
@@ -119,7 +120,7 @@ def get_dashboard_data(user):
         "brain": {
             "name": platform.node(),
             "status": "ONLINE",
-            "version": "73.0-local",
+            "version": VERSION,
             "uptime_seconds": int(uptime_seconds),
             "storage_free_gb": round(disk.free / (1024 ** 3), 1),
         },

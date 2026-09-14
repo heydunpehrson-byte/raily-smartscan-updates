@@ -2,6 +2,8 @@
 import os
 import platform
 import threading
+import queue
+import logging
 import uuid
 from pathlib import Path
 import tkinter as tk
@@ -10,6 +12,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 import httpx
 from .preview import PreviewPane
 from raily.filing import filing_components
+from raily.desktop.ui import ScrollFrame, center, apply_icon, avatar
 
 
 BRAIN_URL = "http://127.0.0.1:8765"
@@ -46,6 +49,9 @@ WORKSTATION = load_workstation()
 class RailyWorkstation(tk.Tk):
     def __init__(self):
         super().__init__()
+        apply_icon(self)
+        self._callbacks = queue.Queue()
+        self.after(50, self._drain_callbacks)
 
         self.title("RAILY — Dispatch Brain")
         self.geometry("480x440")
@@ -62,9 +68,46 @@ class RailyWorkstation(tk.Tk):
         self.setup_styles()
         self.show_login()
 
+    def _drain_callbacks(self):
+        try:
+            while True:
+                generation, callback = self._callbacks.get_nowait()
+                if generation == self._view_generation:
+                    callback()
+        except queue.Empty:
+            pass
+        self.after(50, self._drain_callbacks)
+
+    def background(self, operation, ready, failed=None):
+        generation = self._view_generation
+        def run():
+            try:
+                result = operation()
+                self._callbacks.put((generation, lambda: ready(result)))
+            except Exception as exc:
+                logging.getLogger(__name__).error('Workstation request failed: %s', type(exc).__name__)
+                if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 401:
+                    self._callbacks.put((generation, self.session_expired))
+                elif failed:
+                    self._callbacks.put((generation, failed))
+                else:
+                    self._callbacks.put((generation, lambda: messagebox.showerror('RAILY needs attention', 'The tower could not complete that request. Your document is preserved. Check Diagnostics for details.', parent=self)))
+        threading.Thread(target=run, daemon=True).start()
+
+    def session_expired(self):
+        self.session_token = None
+        self.show_login()
+        self.status_var.set('Please sign in again to reconnect to the tower.')
+
+    def report_callback_exception(self, exc_type, exc_value, traceback):
+        logging.getLogger(__name__).error('UI callback failed', exc_info=(exc_type, exc_value, traceback))
+        messagebox.showerror('RAILY needs attention', 'A display action could not finish. Open RAILY Diagnostics for details.', parent=self)
+
     def setup_styles(self):
         style = ttk.Style(self)
         style.theme_use("clam")
+        style.configure('TButton', padding=(10, 7), font=('Segoe UI', 10))
+        style.configure('Missing.TEntry', fieldbackground='#fff0d0')
 
         style.configure(
             "Dark.TFrame",
@@ -119,6 +162,7 @@ class RailyWorkstation(tk.Tk):
 
     def clear(self):
         self._view_generation += 1
+        self._refresh_busy = False
         if self.refresh_job:
             try:
                 self.after_cancel(self.refresh_job)
@@ -133,10 +177,12 @@ class RailyWorkstation(tk.Tk):
         self.clear()
 
         self._set_login_geometry()
-        self.resizable(False, False)
+        self.resizable(True, True)
 
-        outer = ttk.Frame(self, style="Dark.TFrame", padding=30)
-        outer.pack(fill="both", expand=True)
+        scroll = ScrollFrame(self)
+        scroll.pack(fill='both', expand=True)
+        outer = scroll.body
+        outer.configure(style='Dark.TFrame', padding=24)
 
         ttk.Label(
             outer,
@@ -220,6 +266,8 @@ class RailyWorkstation(tk.Tk):
 
         self.after(200, self.check_brain)
         self.after(400, self.password_entry.focus_set)
+        self.update_idletasks()
+        center(self, max(500, outer.winfo_reqwidth()+32), outer.winfo_reqheight()+50)
 
     def _set_login_geometry(self):
         """Size and center the login view for common Windows DPI settings."""
@@ -236,6 +284,8 @@ class RailyWorkstation(tk.Tk):
         self.geometry(f"{width}x{height}+{x}+{y}")
 
     def check_brain(self):
+        if self.session_token:
+            return
         generation = self._view_generation
         def worker():
             online = False
@@ -249,10 +299,7 @@ class RailyWorkstation(tk.Tk):
             except Exception:
                 pass
 
-            self.after(
-                0,
-                lambda: self.update_brain_status(online, generation)
-            )
+            self._callbacks.put((generation, lambda: self.update_brain_status(online, generation)))
 
         threading.Thread(
             target=worker,
@@ -298,51 +345,29 @@ class RailyWorkstation(tk.Tk):
     def login(self):
         username = self.user_entry.get().strip()
         password = self.password_entry.get()
-
         if not username or not password:
-            messagebox.showwarning(
-                "RAILY",
-                "Enter your username and password.",
-            )
+            messagebox.showwarning('RAILY', 'Enter your username and password.', parent=self)
             return
-
-        try:
-            response = httpx.post(
-                f"{BRAIN_URL}/login",
-                json={
-                    "username": username,
-                    "password": password,
-                    "workstation_id": WORKSTATION["id"],
-                    "workstation_name": WORKSTATION["name"],
-                },
-                timeout=5.0,
-            )
-
+        self.signin_button.state(['disabled'])
+        self.status_var.set('Connecting you to the Dispatch Tower…')
+        def operation():
+            response = httpx.post(f'{BRAIN_URL}/login', json={'username':username, 'password':password, 'workstation_id':WORKSTATION['id'], 'workstation_name':WORKSTATION['name']}, timeout=5)
             if response.status_code == 401:
-                messagebox.showerror(
-                    "RAILY",
-                    "Invalid username or password.",
-                )
-                self.password_entry.delete(0, tk.END)
-                return
-
+                return None
             response.raise_for_status()
-
-            data = response.json()
-
-            self.session_token = data["token"]
-            self.username = data["username"]
-            self.role = data["role"]
-
+            return response.json()
+        def ready(data):
             self.password_entry.delete(0, tk.END)
-
+            if data is None:
+                self.status_var.set('Please check your username and password.')
+                self.signin_button.state(['!disabled'])
+                return
+            self.session_token, self.username, self.role = data['token'], data['username'], data['role']
             self.show_dashboard()
-
-        except Exception as exc:
-            messagebox.showerror(
-                "RAILY",
-                f"Could not connect to Dispatch Brain.\n\n{exc}",
-            )
+        def failed():
+            self.signin_button.state(['!disabled'])
+            self.status_var.set('The tower is not responding. Check RAILY Diagnostics.')
+        self.background(operation, ready, failed)
 
     def auth_headers(self):
         return {
@@ -388,6 +413,7 @@ class RailyWorkstation(tk.Tk):
             pady=8,
         )
         self.signal_label.pack(side="right")
+        avatar(self)
 
         content = ttk.Frame(
             self,
@@ -574,6 +600,7 @@ class RailyWorkstation(tk.Tk):
         ).pack(side="right")
 
         self.refresh_dashboard()
+        center(self, 1280, 820)
 
     def submit_document(self):
         path = filedialog.askopenfilename(filetypes=[("Documents", "*.pdf *.png *.jpg *.jpeg *.tif *.tiff"), ("All files", "*.*")])
@@ -612,92 +639,28 @@ class RailyWorkstation(tk.Tk):
             messagebox.showerror('Duplicate Siding', 'Unable to load duplicates. Check the Brain connection.', parent=self)
 
     def show_review_queue(self):
-        try:
-            response = httpx.get(f"{BRAIN_URL}/review", headers=self.auth_headers(), timeout=5.0)
-            response.raise_for_status(); jobs = response.json()
-            if not jobs:
-                messagebox.showinfo("Conductor Review", "No jobs are awaiting review.", parent=self); return
-            job = jobs[0]
-            ocr = job.get("ocr") or {}
-            review_window = tk.Toplevel(self)
-            review_window.title(f"Conductor Review — Job {job['id']}")
-            review_window.geometry(f"{min(1400, self.winfo_screenwidth()-80)}x{min(900, self.winfo_screenheight()-100)}")
-            review_window.transient(self)
-            panes = ttk.Panedwindow(review_window, orient='horizontal')
-            panes.pack(fill='both', expand=True)
-            preview = PreviewPane(panes, f"{BRAIN_URL}/review/{job['id']}/preview", self.auth_headers())
-            panes.add(preview, weight=3)
-            window = ttk.Frame(panes)
-            panes.add(window, weight=2)
-            ttk.Label(window, text=f"File: {job.get('original_name') or job.get('document_name')}\nReview reason: {job.get('review_reason') or job.get('error_message') or 'Low confidence / missing metadata'}", justify="left").pack(anchor="w", padx=12, pady=8)
-            ttk.Label(window, text=f"Raw OCR context:\n{(job.get('raw_ocr_context') or ocr.get('text') or '')[:900]}\n\nCleaned/extracted context:\n{(job.get('cleaned_ocr_context') or '')[:900]}\nOCR confidence: {ocr.get('ocr_confidence', 'unknown')}", justify="left", wraplength=720).pack(anchor="w", padx=12)
-            form = ttk.Frame(window); form.pack(fill="x", padx=12, pady=8)
-            values = {"railroad": ocr.get("railroad") or "", "location": ocr.get("location") or "", "document_type": ocr.get("category") or "", "date": ocr.get("date") or "", "name": ocr.get("name") or ""}
-            entries = {}
-            for row, (key, label) in enumerate((("railroad","Railroad"),("location","Location"),("document_type","Document Type/Category"),("date","Document Date"),("name","Person/Name (optional)"))):
-                ttk.Label(form, text=label).grid(row=row, column=0, sticky="w", pady=3); var=tk.StringVar(value=values[key]); entry=ttk.Entry(form, textvariable=var, width=58); entry.grid(row=row, column=1, sticky="ew", pady=3); entries[key]=(var, entry)
-            proposed = ttk.Label(window, text=f"Proposed filename: {job.get('proposed_filename')}\nProposed destination: {job.get('proposed_destination')}", justify="left"); proposed.pack(anchor="w", padx=12, pady=6)
-            approve = ttk.Button(window, text="Approve / File", state="disabled")
-            approve.pack(side="right", padx=12, pady=10)
-            teach = tk.StringVar(value="document")
-            ttk.Label(window, text="Correction scope:").pack(anchor="w", padx=12)
-            ttk.Radiobutton(window, text="Apply to this document only", variable=teach, value="document").pack(anchor="w", padx=20)
-            ttk.Radiobutton(window, text="Teach RAILY / Save as learned rule", variable=teach, value="learn").pack(anchor="w", padx=20)
-            ttk.Button(window, text="Close", command=review_window.destroy).pack(side="right", pady=10)
-            def validate(*_):
-                missing = ["document_type"] if not entries["document_type"][0].get().strip() else []
-                for key, (_, entry) in entries.items(): entry.configure(style="Missing.TEntry" if key in missing else "TEntry")
-                try:
-                    railroad, location = filing_components(entries['railroad'][0].get(), entries['location'][0].get())
-                except ValueError:
-                    proposed.configure(text='Unsafe destination: correct Railroad/Location')
-                    approve.state(['disabled'])
-                    return
-                proposed.configure(text=f"Proposed filename: {job.get('proposed_filename')}\nProposed destination: {BRAIN_URL} filing root / {railroad} / {location}")
-                approve.state(["!disabled"] if not missing else ["disabled"])
-            for var, _ in entries.values(): var.trace_add("write", validate)
-            def submit():
-                payload={k: v[0].get().strip() for k,v in entries.items()}; payload["teach"] = teach.get() == "learn"
-                if payload["teach"] and not messagebox.askyesno("Confirm learning", "Save this correction as a learned rule for similar documents?", parent=window): return
-                if payload["teach"]: payload["pattern"] = simpledialog.askstring("Learned rule", "Pattern, alias, filename cue, or layout hint:", parent=window) or ""
-                if not messagebox.askyesno("Confirm approval", "Approve and file this existing job?", parent=window): return
-                try:
-                    result=httpx.post(f"{BRAIN_URL}/review/{job['id']}", headers=self.auth_headers(), json=payload, timeout=5.0); result.raise_for_status(); window.destroy(); messagebox.showinfo("Conductor Review", "Job approved and filed.", parent=self); self.refresh_dashboard()
-                except Exception as exc: messagebox.showerror("Conductor Review", str(exc), parent=window)
-            approve.configure(command=submit); validate()
-        except Exception as exc:
-            messagebox.showerror("Conductor Review", str(exc), parent=self)
+        from .review import open_review
+        open_review(self, BRAIN_URL)
 
     def refresh_dashboard(self):
-        if not self.session_token:
+        if not self.session_token or getattr(self, '_refresh_busy', False):
             return
-
-        def worker():
-            try:
-                response = httpx.get(
-                    f"{BRAIN_URL}/dashboard",
-                    headers=self.auth_headers(),
-                    timeout=4.0,
-                )
-
-                response.raise_for_status()
-                data = response.json()
-
-                self.after(
-                    0,
-                    lambda: self.apply_dashboard(data)
-                )
-
-            except Exception:
-                self.after(
-                    0,
-                    self.dashboard_offline
-                )
-
-        threading.Thread(
-            target=worker,
-            daemon=True,
-        ).start()
+        if self.refresh_job:
+            self.after_cancel(self.refresh_job)
+            self.refresh_job = None
+        self._refresh_busy = True
+        headers = self.auth_headers()
+        def operation():
+            response = httpx.get(f'{BRAIN_URL}/dashboard', headers=headers, timeout=4)
+            response.raise_for_status()
+            return response.json()
+        def ready(data):
+            self._refresh_busy = False
+            self.apply_dashboard(data)
+        def failed():
+            self._refresh_busy = False
+            self.dashboard_offline()
+        self.background(operation, ready, failed)
 
     def apply_dashboard(self, data):
         yard = data.get("yard", {})

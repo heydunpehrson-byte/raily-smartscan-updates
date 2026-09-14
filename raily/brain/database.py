@@ -1,7 +1,8 @@
 ﻿from pathlib import Path
 import sqlite3
+import os
 
-BRAIN_ROOT = Path.home() / "Documents" / "RAILY-Brain"
+BRAIN_ROOT = Path(os.environ.get('RAILY_BRAIN_ROOT', Path.home() / 'Documents' / 'RAILY-Brain'))
 DB_PATH = BRAIN_ROOT / "Data" / "raily.db"
 
 
