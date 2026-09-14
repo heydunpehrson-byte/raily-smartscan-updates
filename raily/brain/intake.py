@@ -395,7 +395,11 @@ def build_router(current_user, audit):
                 item["proposed_filename"] = row["original_name"] or row["document_name"]
                 stored = json.loads(item.get("metadata_json") or "{}")
                 item["ocr"] = {"railroad": stored.get("railroad"), "location": stored.get("location"), "category": stored.get("document_type"), "date": stored.get("date"), "name": stored.get("name"), "ocr_confidence": item.get("ocr_confidence", 0)}
-                item["proposed_destination"] = str(BRAIN_ROOT / "Documents" / "Railroads" / (stored.get("railroad") or "[Railroad required]") / (stored.get("location") or "[Location required]"))
+                if not item["ocr"]["category"] and (item.get("raw_ocr_context") or item.get("cleaned_ocr_context")):
+                    text = (item.get("cleaned_ocr_context") or item.get("raw_ocr_context") or "").casefold()
+                    if "irail services group llc" in text and sum(x in text for x in ("start count", "on duty", "total starts")) >= 2:
+                        item["ocr"]["category"] = "Work Log / Start Count Log"; item["ocr"]["ocr_confidence"] = max(item["ocr"]["ocr_confidence"], 90)
+                item["proposed_destination"] = str(BRAIN_ROOT / "Documents" / "Railroads" / (stored.get("railroad") or "Unassigned Railroad") / (stored.get("location") or "General"))
                 result.append(item)
             return result
         finally: conn.close()
