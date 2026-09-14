@@ -7,7 +7,7 @@ from pathlib import Path
 
 try:
     import pytesseract
-    from PIL import Image
+    from PIL import Image, ImageOps, ImageFilter, ImageEnhance
 except Exception:  # OCR is optional in minimal server installs
     pytesseract = None
     Image = None
@@ -51,7 +51,25 @@ def process_document(path: str | Path) -> dict:
     if source.suffix.lower() in {".txt", ".csv"}:
         text = source.read_text(encoding="utf-8", errors="ignore")
     elif pytesseract and Image and source.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}:
-        text = pytesseract.image_to_string(Image.open(source))
+        image = Image.open(source).convert("RGB")
+        image = ImageOps.exif_transpose(image)
+        # Remove small scan borders, normalize contrast, upscale small scans,
+        # and compare native/grayscale/threshold OCR candidates.
+        margin = max(2, int(min(image.size) * .02)); image = image.crop((margin, margin, image.width-margin, image.height-margin))
+        if min(image.size) < 1200: image = image.resize((image.width*2, image.height*2), Image.Resampling.LANCZOS)
+        gray = ImageOps.autocontrast(ImageOps.grayscale(image)).filter(ImageFilter.SHARPEN)
+        contrast = ImageEnhance.Contrast(gray).enhance(1.35)
+        threshold = contrast.point(lambda p: 255 if p > 165 else 0)
+        candidates = []
+        for candidate_image in (image, contrast, threshold):
+            for config in ("--psm 6", "--psm 11", "--psm 3"):
+                data = pytesseract.image_to_data(candidate_image, config=config, output_type=pytesseract.Output.DICT)
+                parts = [t.strip() for t, c in zip(data.get("text", []), data.get("conf", [])) if t.strip() and float(c) >= 0]
+                confidence = sum(max(0.0, float(c)) for c in data.get("conf", []) if float(c) >= 0) / max(1, sum(float(c) >= 0 for c in data.get("conf", [])))
+                candidates.append((confidence, " ".join(parts)))
+        confidence, text = max(candidates, key=lambda item: item[0], default=(0.0, ""))
+    else:
+        confidence = 0.0
     railroad = _value(text, FIELD_LABELS["railroad"])
     location = _value(text, FIELD_LABELS["location"])
     name = _value(text, FIELD_LABELS["name"])
@@ -68,6 +86,7 @@ def process_document(path: str | Path) -> dict:
     # Blank variable fields are expected for a template; static anchors provide
     # the confidence signal and never fabricate a person, railroad, or date.
     confidence = min(1.0, anchor_hits / 3) if anchor_hits else (1 / 3 if classification else 0)
-    return {"text": text, "railroad": railroad, "location": location, "name": name,
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    return {"text": text, "raw_text": text, "cleaned_text": cleaned, "ocr_confidence": round(float(locals().get("confidence", 0.0)), 1), "railroad": railroad, "location": location, "name": name,
             "date": date, "category": classification, "confidence": confidence,
             "review_required": not classification}

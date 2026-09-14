@@ -592,7 +592,7 @@ class RailyWorkstation(tk.Tk):
             ocr = job.get("ocr") or {}
             window = tk.Toplevel(self); window.title(f"Conductor Review — Job {job['id']}"); window.geometry("760x620"); window.transient(self)
             ttk.Label(window, text=f"File: {job.get('original_name') or job.get('document_name')}\nReview reason: {job.get('review_reason') or job.get('error_message') or 'Low confidence / missing metadata'}", justify="left").pack(anchor="w", padx=12, pady=8)
-            ttk.Label(window, text=f"OCR context:\n{(ocr.get('text') or '')[:1400]}", justify="left", wraplength=720).pack(anchor="w", padx=12)
+            ttk.Label(window, text=f"Raw OCR context:\n{(job.get('raw_ocr_context') or ocr.get('text') or '')[:900]}\n\nCleaned/extracted context:\n{(job.get('cleaned_ocr_context') or '')[:900]}\nOCR confidence: {ocr.get('ocr_confidence', 'unknown')}", justify="left", wraplength=720).pack(anchor="w", padx=12)
             form = ttk.Frame(window); form.pack(fill="x", padx=12, pady=8)
             values = {"railroad": ocr.get("railroad") or "", "location": ocr.get("location") or "", "document_type": ocr.get("category") or "", "date": ocr.get("date") or "", "name": ocr.get("name") or ""}
             entries = {}

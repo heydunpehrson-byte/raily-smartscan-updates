@@ -392,6 +392,8 @@ def build_router(current_user, audit):
                 except Exception as exc:
                     ocr = {"error": str(exc)}
                 item["ocr"] = ocr
+                item["raw_ocr_context"] = ocr.get("raw_text", ocr.get("text", ""))
+                item["cleaned_ocr_context"] = ocr.get("cleaned_text", "")
                 item["proposed_filename"] = row["original_name"] or row["document_name"]
                 item["proposed_destination"] = str(BRAIN_ROOT / "Documents" / "Railroads" / (ocr.get("railroad") or "[Railroad required]") / (ocr.get("location") or "[Location required]"))
                 result.append(item)
