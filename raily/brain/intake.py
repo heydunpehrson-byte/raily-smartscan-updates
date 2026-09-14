@@ -410,8 +410,35 @@ def build_router(current_user, audit):
             if not metadata["railroad"] or not metadata["location"] or not metadata["document_type"] or not metadata["date"]:
                 raise HTTPException(status_code=400, detail="Railroad, Location, Document Type, and Date are required")
             conn.execute("UPDATE processing_jobs SET status='FILED', metadata_json=?, review_reason=NULL, error_message=NULL, updated_at=? WHERE id=?", (json.dumps(metadata), datetime.now(timezone.utc).isoformat(), job_id)); conn.commit()
+            if body.get("teach"):
+                conn.execute("INSERT INTO learned_rules(rule_type, pattern, correction_json, created_by) VALUES(?,?,?,?)", (body.get("rule_type", "document"), body.get("pattern", ""), json.dumps(metadata), user["username"])); conn.commit()
         finally: conn.close()
         audit(user["username"], user["workstation_id"], "JOB_REVIEW_APPROVED", f"Approved job {job_id} with corrected metadata")
         return {"job_id": job_id, "status": "FILED", "metadata": metadata}
+
+    @router.get("/admin/learned-rules")
+    def learned_rules(user=Depends(current_user)):
+        if user["role"] not in {"Administrator", "Conductor / Reviewer"}: raise HTTPException(status_code=403, detail="Conductor or Administrator access required")
+        conn=connect()
+        try: return [dict(x) for x in conn.execute("SELECT * FROM learned_rules ORDER BY id DESC").fetchall()]
+        finally: conn.close()
+
+    @router.patch("/admin/learned-rules/{rule_id}")
+    def edit_learned_rule(rule_id: int, body: dict, user=Depends(current_user)):
+        if user["role"] != "Administrator": raise HTTPException(status_code=403, detail="Administrator access required")
+        conn=connect()
+        try: conn.execute("UPDATE learned_rules SET enabled=COALESCE(?,enabled), pattern=COALESCE(?,pattern), updated_at=? WHERE id=?", (body.get("enabled"), body.get("pattern"), datetime.now(timezone.utc).isoformat(), rule_id)); conn.commit()
+        finally: conn.close()
+        audit(user["username"], user["workstation_id"], "LEARNED_RULE_EDITED", f"Edited learned rule {rule_id}")
+        return {"id": rule_id, "status": "updated"}
+
+    @router.delete("/admin/learned-rules/{rule_id}")
+    def delete_learned_rule(rule_id: int, user=Depends(current_user)):
+        if user["role"] != "Administrator": raise HTTPException(status_code=403, detail="Administrator access required")
+        conn=connect()
+        try: conn.execute("DELETE FROM learned_rules WHERE id=?", (rule_id,)); conn.commit()
+        finally: conn.close()
+        audit(user["username"], user["workstation_id"], "LEARNED_RULE_DELETED", f"Deleted learned rule {rule_id}")
+        return {"id": rule_id, "status": "deleted"}
 
     return router

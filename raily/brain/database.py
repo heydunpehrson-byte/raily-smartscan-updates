@@ -75,6 +75,12 @@ def initialize_database():
             status TEXT NOT NULL DEFAULT 'QUEUED', source_workstation TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS learned_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, rule_type TEXT NOT NULL,
+            pattern TEXT NOT NULL, correction_json TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1, created_by TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(processing_jobs)")}
         for name, definition in {
             "job_uuid":"TEXT", "original_name":"TEXT", "stored_path":"TEXT",
