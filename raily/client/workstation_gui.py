@@ -5,7 +5,7 @@ import threading
 import uuid
 from pathlib import Path
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 import httpx
 
@@ -503,6 +503,12 @@ class RailyWorkstation(tk.Tk):
 
         ttk.Button(
             footer,
+            text="Submit Document",
+            command=self.submit_document,
+        ).pack(side="right", padx=(8, 0))
+
+        ttk.Button(
+            footer,
             text="Refresh",
             command=self.refresh_dashboard,
         ).pack(side="right", padx=(8, 0))
@@ -521,6 +527,19 @@ class RailyWorkstation(tk.Tk):
         ).pack(side="right")
 
         self.refresh_dashboard()
+
+    def submit_document(self):
+        path = filedialog.askopenfilename(filetypes=[("Documents", "*.pdf *.png *.jpg *.jpeg *.tif *.tiff"), ("All files", "*.*")])
+        if not path or not self.session_token:
+            return
+        try:
+            with open(path, "rb") as handle:
+                response = httpx.post(f"{BRAIN_URL}/documents/upload", headers=self.auth_headers(), files={"file": (os.path.basename(path), handle)}, timeout=30.0)
+            response.raise_for_status()
+            messagebox.showinfo("RAILY", f"Document queued: {response.json().get('job_id')}")
+            self.refresh_dashboard()
+        except Exception as exc:
+            messagebox.showerror("RAILY", f"Upload failed.\n\n{exc}")
 
     def refresh_dashboard(self):
         if not self.session_token:

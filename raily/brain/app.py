@@ -1,5 +1,6 @@
 ﻿from datetime import datetime, timezone
 import sqlite3
+import threading
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel
@@ -7,12 +8,15 @@ from pydantic import BaseModel
 from .auth import hash_password, verify_password
 from .database import DB_PATH, connect, initialize_database
 from .sessions import create_session, get_session, revoke_session
+from .worker import worker_loop
 
 
 app = FastAPI(
     title="RAILY Dispatch Brain",
     version="73.0-local",
 )
+_worker_stop = threading.Event()
+_worker_thread = None
 
 VALID_ROLES = {
     "Administrator",
@@ -98,6 +102,11 @@ def require_valid_role(role: str):
 @app.on_event("startup")
 def startup():
     initialize_database()
+    global _worker_thread
+    if not _worker_thread or not _worker_thread.is_alive():
+        _worker_stop.clear()
+        _worker_thread = threading.Thread(target=worker_loop, args=(_worker_stop,), daemon=True)
+        _worker_thread.start()
 
 
 @app.get("/health")
@@ -459,8 +468,9 @@ def list_active_sessions(admin=Depends(administrator)):
             LEFT JOIN workstations w ON w.id = s.workstation_id
             WHERE s.revoked_at IS NULL
               AND u.enabled = 1
+              AND s.expires_at > ?
             ORDER BY s.last_seen DESC
-            """
+            """, (datetime.now(timezone.utc).isoformat(),)
         ).fetchall()
 
         return [dict(row) for row in rows]

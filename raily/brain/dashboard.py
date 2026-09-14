@@ -64,8 +64,9 @@ def get_dashboard_data(user):
             LEFT JOIN workstations w ON w.id = s.workstation_id
             WHERE s.revoked_at IS NULL
               AND u.enabled = 1
+              AND s.expires_at > ?
             ORDER BY s.last_seen DESC
-        """).fetchall()
+        """, (datetime.now(timezone.utc).isoformat(),)).fetchall()
 
         workstations = conn.execute("""
             SELECT

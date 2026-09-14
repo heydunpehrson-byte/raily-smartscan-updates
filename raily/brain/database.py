@@ -70,6 +70,19 @@ def initialize_database():
                 details TEXT
             )
         """)
+        conn.execute("""CREATE TABLE IF NOT EXISTS processing_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, document_name TEXT,
+            status TEXT NOT NULL DEFAULT 'QUEUED', source_workstation TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(processing_jobs)")}
+        for name, definition in {
+            "job_uuid":"TEXT", "original_name":"TEXT", "stored_path":"TEXT",
+            "sha256":"TEXT", "size_bytes":"INTEGER", "submitted_by":"TEXT",
+            "error_message":"TEXT"
+        }.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE processing_jobs ADD COLUMN {name} {definition}")
 
         conn.commit()
     finally:
