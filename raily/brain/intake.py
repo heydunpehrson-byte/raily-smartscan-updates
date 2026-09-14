@@ -393,7 +393,9 @@ def build_router(current_user, audit):
                 item["raw_ocr_context"] = item.get("raw_ocr_context", "")
                 item["cleaned_ocr_context"] = item.get("cleaned_ocr_context", "")
                 item["proposed_filename"] = row["original_name"] or row["document_name"]
-                item["proposed_destination"] = str(BRAIN_ROOT / "Documents" / "Railroads" / (ocr.get("railroad") or "[Railroad required]") / (ocr.get("location") or "[Location required]"))
+                stored = json.loads(item.get("metadata_json") or "{}")
+                item["ocr"] = {"railroad": stored.get("railroad"), "location": stored.get("location"), "category": stored.get("document_type"), "date": stored.get("date"), "name": stored.get("name"), "ocr_confidence": item.get("ocr_confidence", 0)}
+                item["proposed_destination"] = str(BRAIN_ROOT / "Documents" / "Railroads" / (stored.get("railroad") or "[Railroad required]") / (stored.get("location") or "[Location required]"))
                 result.append(item)
             return result
         finally: conn.close()
